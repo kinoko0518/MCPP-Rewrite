@@ -19,8 +19,8 @@ fn valid_check() {
 }
 
 pub struct Scoreboard {
-    name  : String,
-    scope : Vec<String>
+    pub name  : String,
+    pub scope : Vec<String>
 }
 
 pub enum Calcable {
@@ -70,5 +70,11 @@ impl Scoreboard {
             &Calcable::Int(i) => format!("scoreboard players set {} {} {}", self.mcname(), NAMESPACE, i),
             &Calcable::Scr(s) => format!("scoreboard players operation {} {} == {} {}", self.mcname(), NAMESPACE, s.mcname(), NAMESPACE)
         };
+    }
+}
+
+impl std::fmt::Display for Scoreboard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.mcname())
     }
 }

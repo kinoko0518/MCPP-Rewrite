@@ -19,12 +19,12 @@ impl MCFunction {
         return format!("{}\n\n{}\n\n{}", &self.header.join("\n"), &self.main.join("\n"), &self.footer.join("\n"));
     }
 
-    fn get_path() {
-        return 
+    fn get_path(&self) -> String {
+        return format!("{}/{}/{}.mcfunction", &self.root.root_path, self.path.join("/"), &self.name)
     }
 
     pub fn save(&self, save_path:String) {
-        let path = format!("{}/{}.mcfunction", save_path, &self.name);
+        let path = &self.get_path();
         let mut file = File::create(path).expect("Could not create a file.");
         writeln!(file, "{}", self.get()).expect("Could not write onto a file.");
         for child_func in &self.child_functions {
