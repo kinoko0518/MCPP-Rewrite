@@ -37,6 +37,12 @@ impl From<i32> for Scoreboard {
     }
 }
 
+impl PartialEq for Scoreboard {
+    fn eq(&self, other: &Self) -> bool {
+        self.mcname() == other.mcname()
+    }
+}
+
 impl Scoreboard {
     pub fn mcname(&self) -> String {
         let mut last = self.scope.to_vec();
@@ -70,6 +76,10 @@ impl Scoreboard {
             &Calcable::Int(i) => format!("scoreboard players set {} {} {}", self.mcname(), NAMESPACE, i),
             &Calcable::Scr(s) => format!("scoreboard players operation {} {} == {} {}", self.mcname(), NAMESPACE, s.mcname(), NAMESPACE)
         };
+    }
+
+    pub fn free(&self) -> String {
+        format!("scoreboard players reset {} {}", self.mcname(), NAMESPACE)
     }
 }
 
