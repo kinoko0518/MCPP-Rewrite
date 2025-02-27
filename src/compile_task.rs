@@ -1,174 +1,149 @@
-use std::{collections::HashMap, fmt::format, fs::File, hash::Hash, os::raw, path::Display, result, vec};
-use rand::Rng;
-use mcfunction::MCFunction;
-use regex::Regex;
-use std::fmt::Debug;
+use std::collections::HashMap;
 
-use scoreboard::Scoreboard;
+pub use scoreboard::Scoreboard;
+pub use mcfunction::MCFunction;
 
-pub mod mcfunction;
+pub mod evaluater;
 pub mod scoreboard;
-
-struct CompileTask {
-    pack_name : String,
-    root_path : String,
-
-    current_scope : Vec<String>,
-
-    variables : HashMap<String, Scoreboard>,
-    functions : HashMap<String, MCFunction>
-}
-
-enum FormulaToken<'a> {
-    Int(i32),
-    Scoreboard(&'a Scoreboard),
-    Operator(Operator),
-}
-#[derive(PartialEq)]
-enum Operator { Add, Rem, Mul, Div, Sur, Pow, Inv }
-
-impl std::fmt::Display for Operator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Operator::Add => "+",
-            Operator::Rem => "-",
-            Operator::Mul => "*",
-            Operator::Div => "/",
-            Operator::Sur => "%",
-            Operator::Pow => "^",
-            Operator::Inv => panic!("Invalid Operator!")
-        })
-    }
-}
-
-impl std::fmt::Display for FormulaToken<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FormulaToken::Int(i) => write!(f, "{}", i.to_string()),
-            FormulaToken::Operator(o) => write!(f, "{}", o),
-            FormulaToken::Scoreboard(s) => write!(f,"{}", s)
-        }
-    }
-}
-
-impl PartialEq for FormulaToken<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        return match (self, other) {
-            (FormulaToken::Int(i), FormulaToken::Int(ii)) => i == ii,
-            (FormulaToken::Operator(o), FormulaToken::Operator(oo)) => *o == *oo,
-            (FormulaToken::Scoreboard(scr), FormulaToken::Scoreboard(scrscr)) => scr == scrscr,
-            _ => panic!("Invalid comparement!")
-        }
-    }
-}
+pub mod mcfunction;
 
 #[test]
-fn valid_check() {
-    let mut task = CompileTask {
-        pack_name : "Test".to_string(),
-        root_path : "TEST_DIR".to_string(),
-        current_scope : vec![],
-        variables : HashMap::new(),
-        functions : HashMap::new()
-    };
-    if true {
-        task.variables.insert("b".to_string(),Scoreboard {
-            name  : "b".to_string(),
-            scope : vec!["test".to_string()]
-        });
-        let res = task.to_formula_tokens("1 + b * 4 % 5");
-        for i in res { print!("{} ", i); }
-    }
+fn compile_test() {
+    let mut compiler = CompileTask::new();
+    println!("{}", compiler.compile("{ fn print {} fn hogehoge { print('Hoge') + print('Fuga'); } }", "test"));
 }
 
-fn random_name(longness:i32) -> String {
-    let mut res = String::new();
-    let availables = [
-        "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
-        "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
-        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
-        "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"
-    ];
-    for i in 0..longness {
-        let target:usize = rand::thread_rng().gen_range(0..availables.len());
-        res += availables[target];
-    }
-    return res;
+#[derive(Clone)]
+pub struct CompileTask {
+    pub namespace : String,
+    pub inherited_variables : HashMap<String, Scoreboard>,
+    pub local_variables : HashMap<String, Scoreboard>,
+    pub inherited_functions : HashMap<String, MCFunction>,
+    pub local_functions : HashMap<String, MCFunction>,
+    pub scope : Vec<String>,
+}
+
+#[derive(Debug)]
+enum SyntaxType {
+    Comment,
+    Sentence,
+    Formula,
+}
+enum SentenceType {
+    IfSentence,
+    WhileSentence,
+    ForSentence,
+    FuncDefinition,
+    Sentence
+}
+
+fn generate_random_string(length: usize) -> String {
+    use rand::Rng;
+    const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyz\
+                            ABCDEFGHIJKLMNOPQRSTUVWXYZ\
+                            0123456789";
+    let mut rng = rand::thread_rng();
+
+    let random_string: String = (0..length)
+        .map(|_| {
+            let idx = rng.gen_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect();
+
+    random_string
 }
 
 impl CompileTask {
-    fn to_operator(&self, input:&str) -> Operator {
-        return if input == "+" { Operator::Add }
-        else if input == "-" { Operator::Rem }
-        else if input == "*" { Operator::Mul }
-        else if input == "/" { Operator::Div }
-        else if input == "%" { Operator::Sur }
-        else if input == "^" { Operator::Pow } 
-        else { panic!("Invalid operator!") }
-    }
-    fn to_a_formula_token(&self, input:&str) -> FormulaToken {
-        let _input = input.trim();
-        if Regex::new("[0-9]+").unwrap().is_match(&_input) {
-            FormulaToken::Int(_input.parse::<i32>().expect("Invalid number."))
-        } else {
-            return FormulaToken::Scoreboard(self.variables.get(_input).expect("A referenced variable is undefined"))
+    fn split_sentence(raw:&str) -> (&str, String) {
+        let specifier_and_inside:(&str, &str) = raw.split_once("{").expect(format!("The sentence, {} have no start identifier.", &raw).as_str());
+        let specifier = specifier_and_inside.0;
+        if !specifier_and_inside.1.ends_with('}') { panic!("The sentence doesn't end with end specifier.") }
+        let inside = if specifier_and_inside.1.len() > 1 {
+            match specifier_and_inside.1.trim().get(0..specifier_and_inside.1.len()-1) {
+                Some(s) => s.to_string(),
+                None => String::new()
+            }
+        } else { String::new() };
+        if inside == String::new() {
+            println!("⚠️  A sentence, {}{{...}} is empty.", specifier);
         }
+        (specifier, inside)
     }
-    fn to_formula_tokens(&self, raw:&str) -> Vec<FormulaToken> {
-        let mut res:Vec<FormulaToken> = vec!();
-        let mut last = 0;
-        for i in 1..raw.len() {
-            let operartor = raw.get(i-1..i).unwrap().to_string();
-            if ["+", "-", "*", "/", "%"].contains(&operartor.as_str()) {
-                let value = raw.get(last..i-1).unwrap();
-                res.push(self.to_a_formula_token(value));
-                res.push(FormulaToken::Operator(self.to_operator(operartor.as_str())));
-                last = i+1;
+    fn guess_line_syntax(input:&str) -> SyntaxType {
+        let trimed = input.trim();
+        println!("{}", trimed);
+        if trimed.starts_with('#') { SyntaxType::Comment }
+        else if trimed.ends_with('}') { SyntaxType::Sentence }
+        else { SyntaxType::Formula }
+    }
+    pub fn compile(&mut self, raw:&str, namespace:&str) -> MCFunction {
+        let implicated = CompileTask::split_sentence(raw);
+        let specializer = implicated.0;
+        let tokenized_specializer:Vec<&str> = specializer.split_whitespace().filter(|f| !f.is_empty()).collect();
+        let sentence_type = if tokenized_specializer.is_empty() { SentenceType::Sentence }
+        else {
+            match *tokenized_specializer.get(0).unwrap() {
+                "if"    => SentenceType::IfSentence,
+                "for"   => SentenceType::ForSentence,
+                "while" => SentenceType::WhileSentence,
+                "fn"    => SentenceType::FuncDefinition,
+                _       => SentenceType::Sentence
+            }
+        };
+        let formatted = implicated.1.replace("}", "};");
+        let parsed:Vec<&str> = formatted.split(";").map(|f| f.trim()).filter(|f| !f.is_empty() && f != &"}").collect();
+        let mut res:Vec<String> = Vec::new();
+        let name:String = match sentence_type {
+            SentenceType::FuncDefinition => tokenized_specializer.get(1).expect("[ERROR] Function definement must have a name on secound specializer.").to_string(),
+            _ => generate_random_string(32)
+        };
+
+        for line in parsed {
+            match CompileTask::guess_line_syntax(line) {
+                SyntaxType::Formula => res.push(evaluater::calc(&self, &line.to_string()).join("\n")),
+                SyntaxType::Sentence => res.push({
+                    let mut slave_compiler = self.clone();
+                    let compiled = slave_compiler.compile(line, namespace);
+                    let compiled_name = compiled.name.clone();
+                    self.local_functions.insert(compiled_name.clone(), compiled);
+                    let compiled = self.get_function(&compiled_name).unwrap();
+                    compiled.save();
+                    compiled.call()
+                }),
+                SyntaxType::Comment => res.push(line.to_string()),
             }
         }
-        res.push(self.to_a_formula_token(raw.get(last..).unwrap()));
-        return res;
-    }
-    fn formula_parser(self, raw:&str) {
-        let tokens = self.to_formula_tokens(raw);
-        let definements:Vec<String> = vec![];
-        let freements:Vec<String> = vec![];
-        
-        let highest_priority = [
-            FormulaToken::Operator(Operator::Pow)
-        ];
-
-        let high_priority = [
-            FormulaToken::Operator(Operator::Mul),
-            FormulaToken::Operator(Operator::Div),
-            FormulaToken::Operator(Operator::Sur)
-        ];
-
-        let low_priority = [
-            FormulaToken::Operator(Operator::Add),
-            FormulaToken::Operator(Operator::Rem)
-        ];
-
-        for i in 0..tokens.len() {
-            if highest_priority.contains(&tokens[i]) {
-                let solved = match (&tokens[i-1..i], &tokens[i..i+1]) {
-                    (FormulaToken::Int(&i), FormulaToken::Int(&ii)) if tokens[..i] == Operator::Pow =>
-                        FormulaToken::Int(i.pow(*ii as u32)),
-                    (FormulaToken::Int(i), FormulaToken::Scoreboard(scr)) => {
-                        let temp_scr = scoreboard::Scoreboard { name  : random_name(32), scope : vec!["TEMP".to_string()] };
-                        definements.push(temp_scr.assign(&scoreboard::Calcable::Scr(**scr)).to_string());
-                        definements.push(temp_scr.calc(&tokens[i], &scoreboard::Calcable::Int(i)));
-                        FormulaToken::Scoreboard(&temp_scr)
-                    }
-                };
+        for var in &self.local_variables { res.push(var.1.free()); }
+        MCFunction {
+            name : name.to_string(),
+            inside : res.join("\n"),
+            path : self.scope.join("/"),
+            namespace : namespace.to_string(),
+            ret_container : Scoreboard {
+                name  : format!("TEMP.RETURN_VALUE.{}", name),
+                scope : Vec::new()
             }
         }
     }
-}
-
-
-impl std::fmt::Display for CompileTask {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[Compiling {}... █▬▬]", &self.pack_name)
+    fn get_function(&self, name:&String) -> Option<&MCFunction> {
+        if self.inherited_functions.contains_key(name) { Some(self.inherited_functions.get(name).unwrap()) }
+        else if self.local_functions.contains_key(name) { Some(self.local_functions.get(name).unwrap()) }
+        else { None }
+    }
+    fn get_variable(&self, name:&String) -> Option<&Scoreboard> {
+        if self.inherited_variables.contains_key(name) { Some(self.inherited_variables.get(name).unwrap()) }
+        else if self.local_variables.contains_key(name) { Some(self.local_variables.get(name).unwrap()) }
+        else { None }
+    }
+    pub fn new() -> CompileTask {
+        CompileTask {
+            scope : Vec::new(),
+            namespace : String::new(),
+            inherited_variables : HashMap::new(),
+            local_variables : HashMap::new(),
+            inherited_functions : HashMap::new(),
+            local_functions : HashMap::new()
+        }
     }
 }

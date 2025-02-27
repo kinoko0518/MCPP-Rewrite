@@ -1,34 +1,38 @@
-use std::fs::File;
-use std::io::Write;
+use super::{CompileTask, Scoreboard};
 
+#[derive(Clone, Debug)]
 pub struct MCFunction {
-    child_functions : Vec<MCFunction>,
+    pub name      : String,
+    pub inside    : String,
+    pub path      : String,
+    pub namespace : String,
 
-    root   : super::CompileTask,
-
-    name   : String,
-    path   : Vec<String>,
-
-    header : Vec<String>,
-    main   : Vec<String>,
-    footer : Vec<String>
+    pub ret_container : Scoreboard
 }
-
+impl std::fmt::Display for MCFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}\n{}]", self.get_fullpath(), self.inside)
+    }
+}
 impl MCFunction {
-    pub fn get(&self) -> String {
-        return format!("{}\n\n{}\n\n{}", &self.header.join("\n"), &self.main.join("\n"), &self.footer.join("\n"));
-    }
+    pub fn new(name:&str, inside:&str, path:&str, compiler:&CompileTask) -> MCFunction {
+        MCFunction {
+            name      : name.to_string(),
+            inside    : inside.to_string(),
+            path      : path.to_string(),
+            namespace : compiler.namespace.clone(),
 
-    fn get_path(&self) -> String {
-        return format!("{}/{}/{}.mcfunction", &self.root.root_path, self.path.join("/"), &self.name)
-    }
-
-    pub fn save(&self, save_path:String) {
-        let path = &self.get_path();
-        let mut file = File::create(path).expect("Could not create a file.");
-        writeln!(file, "{}", self.get()).expect("Could not write onto a file.");
-        for child_func in &self.child_functions {
-            child_func.save(format!("{}/{}", save_path, &self.name));
+            ret_container : Scoreboard {
+                name  : format!("TEMP.RETURN_VALUE.{}", name),
+                scope : Vec::new()
+            }
         }
+    }
+    pub fn get_fullpath(&self) -> String { format!("{}:{}{}{}", self.namespace, self.path, if !self.path.is_empty() {"/"} else {""}, self.name ) }
+    pub fn save(&self) {
+        
+    }
+    pub fn call(&self) -> String {
+        format!("function {}", self.get_fullpath())
     }
 }
