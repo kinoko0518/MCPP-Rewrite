@@ -11,14 +11,11 @@ use regex::Regex;
 #[test]
 fn calc_test() {
     let mut task = CompileTask::new();
-    task.local_variables.insert("b".to_string(),Scoreboard {
-        name  : "b".to_string(),
-        scope : vec!["test".to_string()]
-    });
+    task.define_variable("b".to_string(), vec!["test".to_string()], Calcable::Int(12));
     let correct_infix = vec![
         FormulaToken::Int(1),
         FormulaToken::Operator(Operator::Add),
-        FormulaToken::Scoreboard(&task.local_variables["b"]),
+        FormulaToken::Scoreboard(&task.get_variable(&"b".to_string()).unwrap()),
         FormulaToken::Operator(Operator::Mul),
         FormulaToken::Int(3),
         FormulaToken::Operator(Operator::Div),
@@ -36,12 +33,13 @@ fn calc_test() {
         FormulaToken::Operator(Operator::Add)
     ];
     assert_eq!(to_rpn(infix_parsed), correct_reverse_polish);
-    let formula = "1 + b * 3 / 4".to_string();
-    assert_eq!(calc(&task, &formula), vec![
+    let formula = "let c = 1 + b * 3 / 4".to_string();
+    assert_eq!(calc(&mut task, &formula), vec![
             "scoreboard players set #Calc.TEMP MCPP.var 4".to_string(),
             "scoreboard players set #CONSTANT.3 MCPP.var 3\nscoreboard players operation #Calc.TEMP MCPP.var /= #CONSTANT.3 MCPP.var".to_string(),
             "scoreboard players operation #Calc.TEMP MCPP.var *= #test.b MCPP.var".to_string(),
-            "scoreboard add #Calc.TEMP MCPP.var 1".to_string()
+            "scoreboard add #Calc.TEMP MCPP.var 1".to_string(),
+            "scoreboard players operation #c MCPP.var = #Calc.TEMP MCPP.var".to_string()
         ]
     );
 }
@@ -180,7 +178,7 @@ fn to_rpn<'a>(input:Vec<FormulaToken<'a>>) -> Vec<FormulaToken<'a>> {
     }
     out_queue
 }
-fn calc_rpn(formula:Vec<FormulaToken>) -> Vec<String> {
+fn calc_rpn(formula:Vec<FormulaToken>) -> (Vec<String>, Scoreboard) {
     let temp = Scoreboard { name : "TEMP".to_string(), scope : vec!["Calc".to_string()] };
     let mut responce:Vec<String> = Vec::new();
     let mut stack:Vec<Calcable> = Vec::new();
@@ -203,16 +201,34 @@ fn calc_rpn(formula:Vec<FormulaToken>) -> Vec<String> {
             }
         }
     }
-    responce
+    (responce, temp)
 }
-pub fn calc(compiler:&CompileTask, formula:&String) -> Vec<String> {
+pub fn calc(compiler:&mut CompileTask, formula:&String) -> Vec<String> {
     if !formula.is_empty() {
-        calc_rpn(
+        let mut lhs = "";
+        let rhs = match formula.split_once("=") {
+            Some(s) => { lhs = s.0; s.1 }
+            None => formula.as_str()
+        };
+        let calced = calc_rpn(
             to_rpn(
                 to_formula_tokens(
-                    &compiler, &formula)
+                    &compiler, rhs)
                 )
-            )
+        );
+        if !lhs.is_empty() {
+            let mut temp = calced.0;
+            temp.push(
+                compiler.define_variable(
+                    lhs.trim().to_string(),
+                    compiler.scope.clone(),
+                    Calcable::Scr(&calced.1)
+                )
+            );
+            temp
+        } else {
+            calced.0
+        }
     }
     else {
         println!("[WARN] An empty formula calclation occured."); Vec::new()

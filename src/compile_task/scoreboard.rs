@@ -20,7 +20,8 @@ fn valid_check() {
     assert_eq!(test.calc("*", &Calcable::Scr(&test2)), "scoreboard players operation #TEST.Hoge MCPP.var *= #TEST.Fuga MCPP.var");
 }
 #[derive(Debug, Clone)]
-pub struct Scoreboard {
+pub struct 
+Scoreboard {
     pub name  : String,
     pub scope : Vec<String>
 }
@@ -47,7 +48,11 @@ impl From<i32> for Scoreboard {
     }
 }
 
-impl PartialEq for Scoreboard { fn eq(&self, other: &Self) -> bool { self.mcname() == other.mcname() } }
+impl PartialEq for Scoreboard {
+    fn eq(&self, other: &Self) -> bool {
+        self.mcname() == other.mcname()
+    }
+}
 
 impl Scoreboard {
     pub fn mcname(&self) -> String {
@@ -77,7 +82,7 @@ impl Scoreboard {
     pub fn assign(&self, source:&Calcable) -> String {
         return match &source {
             &Calcable::Int(i) => format!("scoreboard players set {} {} {}", self.mcname(), NAMESPACE, i),
-            &Calcable::Scr(s) => format!("scoreboard players operation {} {} == {} {}", self.mcname(), NAMESPACE, s.mcname(), NAMESPACE),
+            &Calcable::Scr(s) => format!("scoreboard players operation {} {} = {} {}", self.mcname(), NAMESPACE, s.mcname(), NAMESPACE),
             &Calcable::Mcf(f) => self.assign(&Calcable::Scr(&f.ret_container))
         };
     }

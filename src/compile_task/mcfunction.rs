@@ -11,7 +11,7 @@ pub struct MCFunction {
 }
 impl std::fmt::Display for MCFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}\n{}]", self.get_fullpath(), self.inside)
+        write!(f, "{} {{\n{}\n}}", self.get_fullpath(), self.inside)
     }
 }
 impl MCFunction {

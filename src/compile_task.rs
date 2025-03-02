@@ -1,17 +1,13 @@
 use std::collections::HashMap;
 
+use regex::Regex;
+use scoreboard::Calcable;
 pub use scoreboard::Scoreboard;
 pub use mcfunction::MCFunction;
 
 pub mod evaluater;
 pub mod scoreboard;
 pub mod mcfunction;
-
-#[test]
-fn compile_test() {
-    let mut compiler = CompileTask::new();
-    println!("{}", compiler.compile("{ fn print {} fn hogehoge { print('Hoge') + print('Fuga'); } }", "test"));
-}
 
 #[derive(Clone)]
 pub struct CompileTask {
@@ -55,16 +51,29 @@ fn generate_random_string(length: usize) -> String {
 }
 
 impl CompileTask {
+    fn define_variable(&mut self, name:String, scope:Vec<String>, value:Calcable) -> String {
+        self.local_variables.insert(name.clone(),Scoreboard {
+            name  : {
+                if !Regex::new("[a-zA-Z_]+")
+                    .unwrap()
+                    .is_match(name.as_str()) {
+                        println!("⚠️  {} is not constracted from romantic alphabet nether underbar.", name)
+                }
+                name.clone()
+            },
+            scope : scope
+        });
+        self.get_variable(&name).unwrap().assign(&value)
+    }
     fn split_sentence(raw:&str) -> (&str, String) {
-        let specifier_and_inside:(&str, &str) = raw.split_once("{").expect(format!("The sentence, {} have no start identifier.", &raw).as_str());
-        let specifier = specifier_and_inside.0;
-        if !specifier_and_inside.1.ends_with('}') { panic!("The sentence doesn't end with end specifier.") }
-        let inside = if specifier_and_inside.1.len() > 1 {
-            match specifier_and_inside.1.trim().get(0..specifier_and_inside.1.len()-1) {
-                Some(s) => s.to_string(),
-                None => String::new()
-            }
-        } else { String::new() };
+        let specifier_and_inside:(&str, &str) = raw
+            .split_once("{")
+            .expect(format!("The sentence, {} have no start identifier.", &raw).as_str());
+        let specifier = specifier_and_inside.0.trim();
+        if !specifier_and_inside.1.ends_with('}') {
+            panic!("The sentence doesn't end with end specifier.")
+        }
+        let inside:String = specifier_and_inside.1.to_string();
         if inside == String::new() {
             println!("⚠️  A sentence, {}{{...}} is empty.", specifier);
         }
@@ -72,7 +81,6 @@ impl CompileTask {
     }
     fn guess_line_syntax(input:&str) -> SyntaxType {
         let trimed = input.trim();
-        println!("{}", trimed);
         if trimed.starts_with('#') { SyntaxType::Comment }
         else if trimed.ends_with('}') { SyntaxType::Sentence }
         else { SyntaxType::Formula }
@@ -80,7 +88,10 @@ impl CompileTask {
     pub fn compile(&mut self, raw:&str, namespace:&str) -> MCFunction {
         let implicated = CompileTask::split_sentence(raw);
         let specializer = implicated.0;
-        let tokenized_specializer:Vec<&str> = specializer.split_whitespace().filter(|f| !f.is_empty()).collect();
+        let tokenized_specializer:Vec<&str> = specializer
+            .split_whitespace()
+            .filter(|f| !f.is_empty())
+            .collect();
         let sentence_type = if tokenized_specializer.is_empty() { SentenceType::Sentence }
         else {
             match *tokenized_specializer.get(0).unwrap() {
@@ -91,17 +102,27 @@ impl CompileTask {
                 _       => SentenceType::Sentence
             }
         };
-        let formatted = implicated.1.replace("}", "};");
-        let parsed:Vec<&str> = formatted.split(";").map(|f| f.trim()).filter(|f| !f.is_empty() && f != &"}").collect();
+        let formatted = implicated.1.replace("}", ";}");
+        let parsed:Vec<&str> = formatted
+            .split(";")
+            .map(|f| f.trim())
+            .filter(|f| !f.is_empty() && f != &"}")
+            .collect();
         let mut res:Vec<String> = Vec::new();
         let name:String = match sentence_type {
-            SentenceType::FuncDefinition => tokenized_specializer.get(1).expect("[ERROR] Function definement must have a name on secound specializer.").to_string(),
+            SentenceType::FuncDefinition => tokenized_specializer
+                .get(1)
+                .expect("⛔  Function definement must have a name on secound specializer.")
+                .to_string(),
             _ => generate_random_string(32)
         };
 
         for line in parsed {
             match CompileTask::guess_line_syntax(line) {
-                SyntaxType::Formula => res.push(evaluater::calc(&self, &line.to_string()).join("\n")),
+                SyntaxType::Formula => res.push(
+                    evaluater::calc(self, &line.to_string())
+                        .join("\n")
+                ),
                 SyntaxType::Sentence => res.push({
                     let mut slave_compiler = self.clone();
                     let compiled = slave_compiler.compile(line, namespace);
