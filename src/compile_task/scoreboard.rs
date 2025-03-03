@@ -31,13 +31,13 @@ pub enum Calcable<'a> {
     Mcf(&'a MCFunction)
 }
 impl fmt::Display for Calcable<'_> {
-     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-         write!(f, "{}", match self {
-             Calcable::Int(i) => i.to_string(),
-             Calcable::Scr(s) => s.to_string(),
-             Calcable::Mcf(f) => format!("{}(...)", f.name)
-         })
-     }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self {
+            Calcable::Int(i) => i.to_string(),
+            Calcable::Scr(s) => s.to_string(),
+            Calcable::Mcf(f) => format!("{}(...)", f.name)
+        })
+    }
 }
 impl From<i32> for Scoreboard {
     fn from(value: i32) -> Self {
