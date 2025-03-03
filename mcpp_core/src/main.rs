@@ -7,6 +7,7 @@ use compile_task::{CompileTask, MCFunction};
 use std::fs::File;
 use std::io::prelude::*;
 
+/// Read a file from given path, and return the inside.
 fn load_a_file_inside(path:&str) -> String {
     let mut source_code = File::open(path)
         .expect("File not found.");
@@ -14,7 +15,10 @@ fn load_a_file_inside(path:&str) -> String {
     source_code.read_to_string(&mut contexts).expect("An error occured while reading text file.");
     contexts
 }
-fn compile_a_file(path:&str) -> MCFunction {
+/// Compile given text file and return result as MCFunction.
+/// 
+/// This is a wrapper of [`compile_task::CompileTask::compile()`]
+pub fn compile_a_file(path:&str) -> MCFunction {
     let mut compiler = CompileTask::new();
     compiler.compile(
         &load_a_file_inside(path),
@@ -32,7 +36,11 @@ fn compile_a_file(path:&str) -> MCFunction {
 fn compile_test() {
     println!("{}", compile_a_file(&"C:/Projects/MCPP-Rewrite/test_code.mcpp".to_string()));
 }
-fn get_input(message: &str) -> String {
+/// Get user input as String.
+/// 
+/// The first argument, message is shown alike
+/// Message : (User input area)
+pub fn get_input(message: &str) -> String {
     print!("{} : ", message);
     std::io::stdout().flush().unwrap();
     let mut buffer = String::new();
