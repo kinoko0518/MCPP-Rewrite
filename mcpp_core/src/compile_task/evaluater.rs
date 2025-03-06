@@ -33,8 +33,9 @@ fn calc_test() {
         FormulaToken::Operator(Operator::Add)
     ];
     assert_eq!(to_rpn(infix_parsed), correct_reverse_polish);
-    let formula = "let c = 1 + b * 3 / 4".to_string();
+    let formula = "c = 1 + b * 3 / 4".to_string();
     assert_eq!(calc(&mut task, &formula), vec![
+            "# c = 1 + b * 3 / 4".to_string(),
             "scoreboard players set #Calc.TEMP MCPP.var 4".to_string(),
             "scoreboard players set #CONSTANT.3 MCPP.var 3\nscoreboard players operation #Calc.TEMP MCPP.var /= #CONSTANT.3 MCPP.var".to_string(),
             "scoreboard players operation #Calc.TEMP MCPP.var *= #test.b MCPP.var".to_string(),
@@ -233,6 +234,6 @@ pub fn calc(compiler:&mut CompileTask, formula:&String) -> Vec<String> {
         result
     }
     else {
-        println!("[WARN] An empty formula calclation occured."); Vec::new()
+        println!("⚠️ An empty formula calclation occured."); Vec::new()
     }
 }
