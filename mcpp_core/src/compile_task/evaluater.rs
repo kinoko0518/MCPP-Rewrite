@@ -38,14 +38,14 @@ fn calc_test() {
     ];
     assert_eq!(to_rpn(infix_parsed), correct_reverse_polish);
     let formula = "c = 1 + b * 3 / 4".to_string();
-    match calc(&mut task, &formula) {
+    match evaluate(&mut task, &formula) {
         Ok(o) => {
             assert_eq!(o, vec![
                     "# c = 1 + b * 3 / 4".to_string(),
                     "scoreboard players set #Calc.TEMP MCPP.var 4".to_string(),
                     "scoreboard players set #CONSTANT.3 MCPP.var 3\nscoreboard players operation #Calc.TEMP MCPP.var /= #CONSTANT.3 MCPP.var".to_string(),
                     "scoreboard players operation #Calc.TEMP MCPP.var *= #test.b MCPP.var".to_string(),
-                    "scoreboard add #Calc.TEMP MCPP.var 1".to_string(),
+                    "scoreboard players add #Calc.TEMP MCPP.var 1".to_string(),
                     "scoreboard players operation #c MCPP.var = #Calc.TEMP MCPP.var".to_string()
                 ]
             );
@@ -114,6 +114,17 @@ impl PartialEq for FormulaToken<'_> {
 }
 
 #[derive(Debug, Clone)]
+/// The enum of the errors might occurs while evaluating a formula.
+/// 
+/// **[EvaluateError::OperationOccuredBetweenUnsupportedTypes]**
+/// This error occurs when two values are operated by undefined operation.
+/// **[EvaluateError::UndefinedFunctionCalled]**
+/// This error occurs when a undefined function called. This is a example code of this error happens.
+/// ```should_panic
+/// let formula = "undefined_function() + 1".to_string();
+/// let compiler = CompileTask::new();
+/// evaluate(compiler, &formula);
+/// ```
 pub enum EvaluateError {
     OperationOccuredBetweenUnsupportedTypes,
     UndefinedFunctionCalled(String),
@@ -141,7 +152,7 @@ impl fmt::Display for EvaluateError {
         })
     }
 }
-
+/// The function for convert &str type mathmetics operators onto the enum, Operator.
 fn to_operator(input:&str) -> Result<Operator, EvaluateError> {
     return match input {
         "+" => Ok(Operator::Add),
@@ -153,6 +164,7 @@ fn to_operator(input:&str) -> Result<Operator, EvaluateError> {
         _   => Err(EvaluateError::UnknownOperatorGiven(input.to_string()))
     }
 }
+/// The function to guess that what given token is and convert it a FormulaToken.
 fn to_a_formula_token<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<FormulaToken<'a>, EvaluateError> {
     let _input = input.trim();
     if ["+", "-", "*", "/", "%", "^"].contains(&_input) {
@@ -179,7 +191,8 @@ fn to_a_formula_token<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<For
             None => Err(EvaluateError::UndefinedVariableReferenced(input.to_string()))
         }
     }
-}    
+}
+/// The pure function to convert &str type formula onto vector of FormulaToken(s).
 fn to_formula_tokens<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<Vec<FormulaToken<'a>>, EvaluateError> {
     let re = Regex::new(r"(\d+|[a-zA-Z]+|[\+\-\*/])").unwrap();
     let splitted:Vec<&'a str> = re
@@ -199,6 +212,7 @@ fn to_formula_tokens<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<Vec<
     }
     Ok(valid_tokens)
 }
+/// The pure function to reorder a infix notation formula onto a reverse polish notation.
 fn to_rpn<'a>(input:Vec<FormulaToken<'a>>) -> Vec<FormulaToken<'a>> {
     let mut out_queue:Vec<FormulaToken> = Vec::new();
     let mut oper_stack:Vec<Operator> = Vec::new();
@@ -238,6 +252,10 @@ fn to_rpn<'a>(input:Vec<FormulaToken<'a>>) -> Vec<FormulaToken<'a>> {
     }
     out_queue
 }
+/// The pure function to calc a reverse polish notation formula.
+/// 
+/// The calcation commands will be kept in the first element of tuple,
+/// and a scoreboard that contains a result will be kept in the secound element of tuple.
 fn calc_rpn(formula:Vec<FormulaToken>) -> (Vec<String>, Scoreboard) {
     let temp = Scoreboard { name : "TEMP".to_string(), scope : vec!["Calc".to_string()] };
     let mut responce:Vec<String> = Vec::new();
@@ -263,7 +281,11 @@ fn calc_rpn(formula:Vec<FormulaToken>) -> (Vec<String>, Scoreboard) {
     }
     (responce, temp)
 }
-pub fn calc(compiler:&mut CompileTask, formula:&String) -> Result<Vec<String>, EvaluateError> {
+/// The impure function for evaluate a line.
+/// 
+/// It returns commands to apply the operations scribed on a formula.
+/// This function modify CompileTask because of definition of variables are processed in this function.
+pub fn evaluate(compiler:&mut CompileTask, formula:&String) -> Result<Vec<String>, EvaluateError> {
     if !formula.is_empty() {
         let mut lhs = "";
         let rhs = match formula.split_once("=") {

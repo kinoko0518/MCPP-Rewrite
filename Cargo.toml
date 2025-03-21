@@ -1,4 +1,3 @@
 [workspace]
-members = [
-    "mcpp_core",
-]
+members = ["interface", "mcpp_core"]
+resolver = "3"

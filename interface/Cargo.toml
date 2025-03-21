@@ -1,0 +1,9 @@
+[package]
+name = "interface"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+"mcpp_core" = { path = "../mcpp_core" }
+serde = { version = "1.0.219", features = ["derive"] }
+toml = "0.8.20"

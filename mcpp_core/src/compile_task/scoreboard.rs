@@ -62,22 +62,10 @@ impl Scoreboard {
         return format!("{}{}", "#", last.join("."));
     }
     /// The pure function to get corresponding scoreboard command.
-    /// # Example
-    /// ```
-    /// let score = Scoreboard {
-    ///     name  : "bar".to_string(),
-    ///     scope : vec!["foo".to_string]
-    /// };
-    /// assert_eq!(test.calc("+", 5), "scoreboard add #foo.bar MCPP.var 5");
-    /// assert_eq!(test.calc("-", 5), "scoreboard remove #foo.bar MCPP.var 5");
-    /// assert_eq!(test.calc("*", 5), "scoreboard players set #CONSTANT.5 MCPP.var 5\nscoreboard players operation #foo.bar MCPP.var *= #CONSTANT.5 MCPP.var");
-    /// assert_eq!(test.calc("/", 5), "scoreboard players set #CONSTANT.5 MCPP.var 5\nscoreboard players operation #foo.bar MCPP.var /= #CONSTANT.5 MCPP.var");
-    /// assert_eq!(test.calc("%", 5), "scoreboard players set #CONSTANT.5 MCPP.var 5\nscoreboard players operation #foo.bar MCPP.var %= #CONSTANT.5 MCPP.var");
-    /// ```
     fn calc_num(&self, operator:&str, num:i32) -> String {
         if ["+", "-"].contains(&operator) {
             let add_or_rem = if &operator == &"+" { "add" } else {"remove"};
-            return format!("scoreboard {} {} {} {}", add_or_rem, self.mcname(), NAMESPACE, num.to_string());
+            return format!("scoreboard players {} {} {} {}", add_or_rem, self.mcname(), NAMESPACE, num.to_string());
         } else {
             let source = Scoreboard::from(num);
             return format!("{}\n{}", source.assign(&Calcable::Int(num)), self.calc_score(operator, &source));

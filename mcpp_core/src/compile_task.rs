@@ -281,13 +281,20 @@ impl CompileTask {
         for line in impl_sentence.parsed_lines {
             match CompileTask::guess_line_syntax(line.as_str()) {
                 SyntaxType::Formula => res.push(
-                    match evaluater::calc(self, &line.to_string()) {
+                    match evaluater::evaluate(self, &line.to_string()) {
                         Ok(o) => o.join("\n"),
                         Err(e) => {
                             occured_errors.push(Error::EvaluateError(e.clone()));
                             format!(
-                                "### Because of evaluation error(s), evaluation of this line was skipped. ###\n
-                                ### The Error -> {} ###",
+                                "### {} ###\n### {} -> {} ###",
+                                match CURRENT_LANGUAGE {
+                                    Language::English => "Because of evaluation error(s), evaluation of this line was skipped.",
+                                    Language::Japanese => "評価エラーのため、式の評価はスキップされました。"
+                                },
+                                match CURRENT_LANGUAGE {
+                                    Language::English => "The Error",
+                                    Language::Japanese => "エラー内容"
+                                },
                                 e
                             )
                         }
@@ -307,8 +314,15 @@ impl CompileTask {
                             Err(e) => {
                                 occured_errors.push(Error::SentenceError(e.clone()));
                                 format!(
-                                    "### Because of failture of compiling a sentence, a callment of the sentence was skipped. ###\n
-                                    ### The Error : {} ###",
+                                    "### {} ###\n### {} : {} ###",
+                                    match CURRENT_LANGUAGE {
+                                        Language::English => "Because of failture of compiling a sentence, a callment of the sentence was skipped.",
+                                        Language::Japanese => "文はコンパイルに失敗したため、スキップされました。"
+                                    },
+                                    match CURRENT_LANGUAGE {
+                                        Language::English => "The Error",
+                                        Language::Japanese => "エラー内容"
+                                    },
                                     e
                                 )
                             }
