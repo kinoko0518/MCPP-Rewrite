@@ -1,6 +1,7 @@
 use core::fmt;
 use std::collections::HashMap;
 
+use evaluater::EvaluateError;
 use regex::Regex;
 use scoreboard::Calcable;
 pub use scoreboard::Scoreboard;
@@ -174,7 +175,7 @@ impl CompileTask {
     /// compiler.define_variable("foo".to_string(), vec!["test".to_string], Calcable::Int(10));
     /// compiler.compile("{bar = foo * 7}") // The result is equal to the result of compiling {bar = 10 * 7}
     /// ```
-    fn define_variable(&mut self, name:String, scope:Vec<String>, value:Calcable) -> String {
+    fn define_variable(&mut self, name:String, scope:Vec<String>, value:Calcable) -> Result<String, EvaluateError> {
         self.local_variables.insert(name.clone(),Scoreboard {
             name  : {
                 if !Regex::new("[a-zA-Z_]+")
@@ -183,6 +184,12 @@ impl CompileTask {
                         println!("⚠️  {} is not constracted from romantic alphabet nether underbar.", name)
                 }
                 name.clone()
+            },
+            data_type : match value {
+                Calcable::Int(_) => scoreboard::Types::Int,
+                Calcable::Flt(_) => scoreboard::Types::Flt,
+                Calcable::Scr(s) => s.data_type.clone(),
+                Calcable::Mcf(mcf) => mcf.ret_container.data_type.clone(),
             },
             scope : scope
         });
@@ -341,6 +348,7 @@ impl CompileTask {
             namespace : namespace.to_string(),
             ret_container : Scoreboard {
                 name  : format!("TEMP.RETURN_VALUE.{}", impl_sentence.name),
+                data_type : scoreboard::Types::Non,
                 scope : Vec::new()
             }
         })

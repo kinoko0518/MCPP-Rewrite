@@ -15,7 +15,11 @@ use regex::Regex;
 #[test]
 fn calc_test() {
     let mut task = CompileTask::new();
-    task.define_variable("b".to_string(), vec!["test".to_string()], Calcable::Int(12));
+    task.define_variable(
+        "b".to_string(),
+        vec!["test".to_string()],
+        Calcable::Int(12)
+    ).unwrap();
     let correct_infix = vec![
         FormulaToken::Int(1),
         FormulaToken::Operator(Operator::Add),
@@ -38,22 +42,18 @@ fn calc_test() {
     ];
     assert_eq!(to_rpn(infix_parsed), correct_reverse_polish);
     let formula = "c = 1 + b * 3 / 4".to_string();
-    match evaluate(&mut task, &formula) {
-        Ok(o) => {
-            assert_eq!(o, vec![
-                    "# c = 1 + b * 3 / 4".to_string(),
-                    "scoreboard players set #Calc.TEMP MCPP.var 4".to_string(),
-                    "scoreboard players set #CONSTANT.3 MCPP.var 3\nscoreboard players operation #Calc.TEMP MCPP.var /= #CONSTANT.3 MCPP.var".to_string(),
-                    "scoreboard players operation #Calc.TEMP MCPP.var *= #test.b MCPP.var".to_string(),
-                    "scoreboard players add #Calc.TEMP MCPP.var 1".to_string(),
-                    "scoreboard players operation #c MCPP.var = #Calc.TEMP MCPP.var".to_string()
-                ]
-            );
-        },
-        Err(e) => {
-            panic!("{}", e);
-        }
-    }
+    
+    assert_eq!(
+        evaluate(&mut task, &formula).unwrap(),
+        vec![
+            "# c = 1 + b * 3 / 4".to_string(),
+            "scoreboard players set #Calc.TEMP MCPP.var 4".to_string(),
+            "scoreboard players set #CONSTANT.3 MCPP.var 3\nscoreboard players operation #Calc.TEMP MCPP.var /= #CONSTANT.3 MCPP.var".to_string(),
+            "scoreboard players operation #Calc.TEMP MCPP.var *= #test.b MCPP.var".to_string(),
+            "scoreboard players add #Calc.TEMP MCPP.var 1".to_string(),
+            "scoreboard players operation #c MCPP.var = #Calc.TEMP MCPP.var".to_string()
+        ]
+    );
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -117,16 +117,24 @@ impl PartialEq for FormulaToken<'_> {
 /// The enum of the errors might occurs while evaluating a formula.
 /// 
 /// **[EvaluateError::OperationOccuredBetweenUnsupportedTypes]**
+/// 
 /// This error occurs when two values are operated by undefined operation.
+/// 
 /// **[EvaluateError::UndefinedFunctionCalled]**
+/// 
 /// This error occurs when a undefined function called. This is a example code of this error happens.
+/// 
 /// ```should_panic
+/// use mcpp_core::compile_task::evaluater::evaluate;
+/// use mcpp_core::compile_task::CompileTask;
+/// 
 /// let formula = "undefined_function() + 1".to_string();
-/// let compiler = CompileTask::new();
-/// evaluate(compiler, &formula);
+/// let mut compiler = CompileTask::new();
+/// evaluate(&mut compiler, &formula).unwrap();
 /// ```
 pub enum EvaluateError {
     OperationOccuredBetweenUnsupportedTypes,
+    AssignOccuredBetweenUnsupportedTypes,
     UndefinedFunctionCalled(String),
     UndefinedVariableReferenced(String),
     CouldntParseANumber(String),
@@ -136,14 +144,16 @@ impl fmt::Display for EvaluateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match CURRENT_LANGUAGE {
             Language::English => match self {
-                Self::OperationOccuredBetweenUnsupportedTypes => String::new(),
+                Self::AssignOccuredBetweenUnsupportedTypes => todo!(),
+                Self::OperationOccuredBetweenUnsupportedTypes => todo!(),
                 Self::UndefinedFunctionCalled(func_name) => format!("An undefined function, {}(...) called.", func_name),
                 Self::UndefinedVariableReferenced(var_name) => format!("An undefined variable, {} referenced.", var_name),
                 Self::CouldntParseANumber(invalid_num) => format!("{} couldn't be solved as number.", invalid_num),
                 Self::UnknownOperatorGiven(invalid_oper) => format!("{} couldn't be solved as operator.", invalid_oper)
             },
             Language::Japanese => match self {
-                Self::OperationOccuredBetweenUnsupportedTypes => String::new(),
+                Self::AssignOccuredBetweenUnsupportedTypes => todo!(),
+                Self::OperationOccuredBetweenUnsupportedTypes => todo!(),
                 Self::UndefinedFunctionCalled(func_name) => format!("{}(...)は呼び出されましたが、宣言されていません。", func_name),
                 Self::UndefinedVariableReferenced(var_name) => format!("{}は参照されましたが、宣言されていません。", var_name),
                 Self::CouldntParseANumber(invalid_num) => format!("{}を数字として処理できませんでした。", invalid_num),
@@ -256,8 +266,12 @@ fn to_rpn<'a>(input:Vec<FormulaToken<'a>>) -> Vec<FormulaToken<'a>> {
 /// 
 /// The calcation commands will be kept in the first element of tuple,
 /// and a scoreboard that contains a result will be kept in the secound element of tuple.
-fn calc_rpn(formula:Vec<FormulaToken>) -> (Vec<String>, Scoreboard) {
-    let temp = Scoreboard { name : "TEMP".to_string(), scope : vec!["Calc".to_string()] };
+fn calc_rpn(formula:Vec<FormulaToken>) -> Result<(Vec<String>, Scoreboard), EvaluateError> {
+    let temp = Scoreboard {
+        name : "TEMP".to_string(),
+        data_type : super::scoreboard::Types::Int,
+        scope : vec!["Calc".to_string()]
+    };
     let mut responce:Vec<String> = Vec::new();
     let mut stack:Vec<Calcable> = Vec::new();
     for token in &formula {
@@ -271,16 +285,17 @@ fn calc_rpn(formula:Vec<FormulaToken>) -> (Vec<String>, Scoreboard) {
                 let rhs = stack.pop().unwrap();
                 let target = match lhs {
                     Calcable::Scr(s) => s,
-                    Calcable::Int(_) => { responce.push(temp.assign(&lhs)); &temp }
+                    Calcable::Int(_) | Calcable::Flt(_) => { responce.push(temp.assign(&lhs)?); &temp }
                     Calcable::Mcf(f) => { responce.push(f.call()); &f.ret_container }
                 };
-                responce.push(target.calc(format!("{}", &o).as_str(), &rhs));
+                responce.push(target.calc(format!("{}", &o).as_str(), &rhs)?);
                 stack.push(Calcable::Scr(target));
             }
         }
     }
-    (responce, temp)
+    Ok((responce, temp))
 }
+
 /// The impure function for evaluate a line.
 /// 
 /// It returns commands to apply the operations scribed on a formula.
@@ -297,7 +312,7 @@ pub fn evaluate(compiler:&mut CompileTask, formula:&String) -> Result<Vec<String
                     Ok(o) => o,
                     Err(e) => { return Err(e) }
                 }
-        ));
+        ))?;
         let mut result =if !lhs.is_empty() {
             let mut temp = calced.0;
             temp.push(
@@ -305,7 +320,7 @@ pub fn evaluate(compiler:&mut CompileTask, formula:&String) -> Result<Vec<String
                     lhs.trim().to_string(),
                     compiler.scope.clone(),
                     Calcable::Scr(&calced.1)
-                )
+                )?
             );
             temp
         } else {
