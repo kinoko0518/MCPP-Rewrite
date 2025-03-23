@@ -20,6 +20,7 @@ pub fn calc(score:&Scoreboard, operator:&str, target:&Calcable) -> Result<String
         Calcable::Flt(f) => calc_float(score, operator, *f),
         Calcable::Scr(s) => calc_score(score, operator, s),
         Calcable::Mcf(f) => calc(score, operator, &Calcable::Scr(&f.ret_container)),
+        _ => Err(EvaluateError::OperationOccuredBetweenUnsupportedTypes(score.data_type.clone(), target.get_type()))
     }
 }
 fn calc_num(score:&Scoreboard, operator:&str, num:i32) -> Result<String, EvaluateError> {
@@ -95,6 +96,45 @@ pub fn assign(score:&Scoreboard, value:&Calcable) -> Result<String, EvaluateErro
         Calcable::Mcf(f) => assign(
             score,
             &Calcable::Scr(&f.ret_container)
-        )
+        ),
+        _ => Err(EvaluateError::AssignOccuredBetweenUnsupportedTypes(value.get_type(), score.data_type.clone()))
+    }
+}
+// Returning a tuple that's constructed by a preoperation and a comparement
+pub fn compare(score:&Scoreboard, operator:&str, value:&Calcable) -> Result<(String, String), EvaluateError> {
+    match operator {
+        "<" | "<=" | "==" | ">=" | ">" => match value {
+            Calcable::Int(i) => {
+                Ok(
+                    match operator {
+                        "<" | ">" => score.pure_compare_value_not_equal(operator, i * get_magnif()),
+                        _ => (String::new(), score.pure_compare_value(operator, i * get_magnif())?)
+                    }
+                )
+            },
+            Calcable::Flt(f) => Ok(
+                (String::new(), score.pure_compare_value(operator, float::scale_float(*f))?)
+            ),
+            Calcable::Scr(s) => match s.data_type {
+                Types::Flt => Ok((String::new(), score.pure_compare_score(operator, s))),
+                Types::Int => {
+                    let temp_score = get_temp_score();
+                    Ok((
+                        String::new(),
+                        format!(
+                            "{}\n{}\n{}",
+                            temp_score.pure_assign_score(s),
+                            temp_score.pure_calc_num("*", get_magnif())?,
+                            s.pure_compare_score(operator, &temp_score)
+                        )
+                    ))
+                },
+                _ => Err(EvaluateError::ComparementOccuredBetweenUnsupportedTypes(score.data_type.clone(), value.get_type()))
+            }
+            _ => Err(
+                EvaluateError::ComparementOccuredBetweenUnsupportedTypes(score.data_type.clone(), value.get_type())
+            )
+        },
+        _ => Err(EvaluateError::UnknownOperatorGiven(operator.to_string()))
     }
 }

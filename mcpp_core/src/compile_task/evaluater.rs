@@ -105,6 +105,7 @@ impl PartialEq for FormulaToken<'_> {
 pub enum EvaluateError {
     OperationOccuredBetweenUnsupportedTypes(Types, Types),
     AssignOccuredBetweenUnsupportedTypes(Types, Types),
+    ComparementOccuredBetweenUnsupportedTypes(Types, Types),
     UndefinedFunctionCalled(String),
     UndefinedVariableReferenced(String),
     CouldntParseANumber(String),
@@ -121,6 +122,9 @@ impl fmt::Display for EvaluateError {
                 ),
                 Self::OperationOccuredBetweenUnsupportedTypes(left, right) => format!(
                     "Calclation between {} and {} is undefined operation.", left, right
+                ),
+                Self::ComparementOccuredBetweenUnsupportedTypes(left, right) => format!(
+                    "Comparement between {} and {} is undefined operation.", left, right
                 ),
                 Self::UndefinedFunctionCalled(func_name) => format!(
                     "An undefined function, {}(...) called.", func_name
@@ -144,7 +148,10 @@ impl fmt::Display for EvaluateError {
                     "{}型の変数に{}型の値を代入する操作は未定義です。", onto, value
                 ),
                 Self::OperationOccuredBetweenUnsupportedTypes(left, right) => format!(
-                    "{}型と{}型の間での計算は未定義操作です。", left, right
+                    "{}型と{}型の計算は未定義操作です。", left, right
+                ),
+                Self::ComparementOccuredBetweenUnsupportedTypes(left, right) => format!(
+                    "{}型と{}型の比較は未定義操作です。", left, right
                 ),
                 Self::UndefinedFunctionCalled(func_name) => format!(
                     "{}(...)は呼び出されましたが、宣言されていません。", func_name
@@ -285,7 +292,6 @@ fn to_rpn<'a>(input:Vec<FormulaToken<'a>>) -> Result<Vec<FormulaToken<'a>>, Eval
         }
         output_queue.push(FormulaToken::Operator(op));
     }
-    println!("{:?}", output_queue);
     Ok(output_queue)
 }
 /// The pure function to calc a reverse polish notation formula.
@@ -316,8 +322,8 @@ fn calc_rpn(formula:Vec<FormulaToken>, temp_score_data_type:Types) -> Result<(Ve
 
                 let target = match lhs {
                     Calcable::Scr(s) => s,
-                    Calcable::Int(_) | Calcable::Flt(_) => { responce.push(temp.assign(&lhs)?); &temp }
-                    Calcable::Mcf(f) => { responce.push(f.call()); &f.ret_container }
+                    Calcable::Mcf(f) => { responce.push(f.call()); &f.ret_container },
+                    _ => { responce.push(temp.assign(&lhs)?); &temp }
                 };
                 responce.push(target.calc(format!("{}", &o).as_str(), &rhs)?);
                 stack.push(Calcable::Scr(target));

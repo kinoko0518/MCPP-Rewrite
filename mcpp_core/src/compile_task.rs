@@ -188,6 +188,7 @@ impl CompileTask {
             data_type : match value {
                 Calcable::Int(_) => scoreboard::Types::Int,
                 Calcable::Flt(_) => scoreboard::Types::Flt,
+                Calcable::Bln(_) => scoreboard::Types::Bln,
                 Calcable::Scr(s) => s.data_type.clone(),
                 Calcable::Mcf(mcf) => mcf.ret_container.data_type.clone(),
             },
@@ -339,19 +340,25 @@ impl CompileTask {
                 SyntaxType::Comment => res.push(line.to_string()),
             }
         }
-        for var in &self.local_variables { res.push(var.1.free()); }
+        // Free variables
+        res.push("# Free all of local variables".to_string());
+        for var in &self.local_variables {
+            res.push(var.1.free());
+        }
         println!("Compiling of {} ended successfully!", impl_sentence.name);
-        Ok(MCFunction {
-            name : impl_sentence.name.to_string(),
-            inside : res.join("\n"),
-            path : self.scope.join("/"),
-            namespace : namespace.to_string(),
-            ret_container : Scoreboard {
-                name  : format!("TEMP.RETURN_VALUE.{}", impl_sentence.name),
-                data_type : scoreboard::Types::Non,
-                scope : Vec::new()
+        Ok(
+            MCFunction {
+                name : impl_sentence.name.to_string(),
+                inside : res.join("\n"),
+                path : self.scope.join("/"),
+                namespace : namespace.to_string(),
+                ret_container : Scoreboard {
+                    name  : format!("TEMP.RETURN_VALUE.{}", impl_sentence.name),
+                    data_type : scoreboard::Types::Non,
+                    scope : Vec::new()
+                }
             }
-        })
+        )
     }
     fn get_function(&self, name:&String) -> Option<&MCFunction> {
         if self.inherited_functions.contains_key(name) { Some(self.inherited_functions.get(name).unwrap()) }

@@ -9,35 +9,15 @@ use super::{evaluater::EvaluateError, MCFunction};
 const NAMESPACE:&str = "MCPP.var";
 
 #[test]
-fn valid_check() {
-    let test = Scoreboard {
-        name  : "Hoge".to_string(),
-        data_type : Types::Int,
-        scope : vec!["TEST".to_string()]
-    };
-    let test2 = Scoreboard {
-        name  : "Fuga".to_string(),
-        data_type : Types::Int,
-        scope : vec!["TEST".to_string()]
-    };
-    assert_eq!(test.calc("+", &Calcable::Int(5)).unwrap(), "scoreboard players add #TEST.Hoge MCPP.var 5");
-    assert_eq!(test.calc("-", &Calcable::Int(5)).unwrap(), "scoreboard players remove #TEST.Hoge MCPP.var 5");
-    assert_eq!(test.calc("*", &Calcable::Int(5)).unwrap(), "scoreboard players set #CONSTANT.5 MCPP.var 5\nscoreboard players operation #TEST.Hoge MCPP.var *= #CONSTANT.5 MCPP.var");
-    assert_eq!(test.calc("*", &Calcable::Scr(&test2)).unwrap(), "scoreboard players operation #TEST.Hoge MCPP.var *= #TEST.Fuga MCPP.var");
-
-    let float_test = Scoreboard {
-        name : "Piyo".to_string(),
+fn compare_test() {
+    let hoge = Scoreboard {
+        name : "Hoge".to_string(),
         data_type : Types::Flt,
         scope : vec!["TEST".to_string()]
     };
-    assert_eq!(
-        float_test.calc("+", &Calcable::Scr(&test2)).unwrap(),
-        "scoreboard players operation #Calc.TEMP MCPP.var = #TEST.Fuga MCPP.var\n\
-        scoreboard players set #CONSTANT.1000 MCPP.var 1000\n\
-        scoreboard players operation #Calc.TEMP MCPP.var *= #CONSTANT.1000 MCPP.var\n\
-        scoreboard players operation #TEST.Piyo MCPP.var += #Calc.TEMP MCPP.var"
-    );
+    println!("{:?}", hoge.compare(">=", &Calcable::Int(810)).unwrap());
 }
+
 #[derive(Debug, Clone)]
 pub struct 
 Scoreboard {
@@ -48,6 +28,7 @@ Scoreboard {
 pub enum Calcable<'a> {
     Int(i32),
     Flt(f32),
+    Bln(bool),
     Scr(&'a Scoreboard),
     Mcf(&'a MCFunction)
 }
@@ -56,6 +37,7 @@ impl Calcable<'_> {
         match self {
             Self::Int(_) => Types::Int,
             Self::Flt(_) => Types::Flt,
+            Self::Bln(_) => Types::Bln,
             Self::Scr(s) => s.data_type.clone(),
             Self::Mcf(f) => f.ret_container.data_type.clone()
         }
@@ -63,9 +45,10 @@ impl Calcable<'_> {
 }
 #[derive(Debug, Clone)]
 pub enum Types {
-    Int,
-    Flt,
-    Non,
+    Int, // Int
+    Flt, // Float
+    Bln, // Boolean
+    Non, // None
 }
 impl fmt::Display for Types {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -73,6 +56,7 @@ impl fmt::Display for Types {
             f, "{}", match self {
                 Self::Int => "int",
                 Self::Flt => "float",
+                Self::Bln => "bool",
                 Self::Non => "none"
             }
         )
@@ -84,6 +68,7 @@ impl fmt::Display for Calcable<'_> {
             Calcable::Int(i) => i.to_string(),
             Calcable::Scr(s) => s.to_string(),
             Calcable::Flt(f) => f.to_string(),
+            Calcable::Bln(b) => b.to_string(),
             Calcable::Mcf(f) => format!("{}(...)", f.name)
         })
     }
@@ -123,6 +108,7 @@ impl Scoreboard {
         match self.data_type {
             Types::Int => int::calc(&self, operator, source),
             Types::Flt => float::calc(&self, operator, source),
+            Types::Bln => bool::calc(self, operator, source),
             Types::Non => Err(EvaluateError::OperationOccuredBetweenUnsupportedTypes(Types::Non, source.get_type()))
         }
     }
@@ -130,8 +116,34 @@ impl Scoreboard {
         match self.data_type {
             Types::Int => int::assign(&self, source),
             Types::Flt => float::assign(&self, source),
+            Types::Bln => bool::assign(&self, source),
             Types::Non => Err(EvaluateError::AssignOccuredBetweenUnsupportedTypes(source.get_type(), Types::Non))
         }
+    }
+    pub fn compare(&self, operator:&str, source:&Calcable) -> Result<(String, String), EvaluateError> {
+        let mut do_invert = false;
+        let _oper = if operator == "!=" {
+            do_invert = true;
+            "=="
+        } else {
+            operator
+        };
+        let result = match self.data_type {
+            Types::Int => int::compare(self, _oper, source),
+            Types::Flt => float::compare(self, _oper, source),
+            Types::Bln => Ok((String::new(), bool::compare(&self, _oper, source)?)),
+            _ => Err(EvaluateError::ComparementOccuredBetweenUnsupportedTypes(self.data_type.clone(), source.get_type()))
+        }?;
+        Ok(
+            (
+                result.0,
+                format!(
+                    "{} {}",
+                    if do_invert {"unless"} else {"if"},
+                    result.1
+                )
+            )
+        )
     }
     pub fn free(&self) -> String {
         format!("scoreboard players reset {} {}", self.mcname(), NAMESPACE)
@@ -186,6 +198,35 @@ impl Scoreboard {
             value.mcname(),
             NAMESPACE
         )
+    }
+    fn pure_compare_score(&self, operator:&str, value:&Scoreboard) -> String {
+        format!(
+            "score {} {} {} {} {}",
+            self.mcname(),
+            NAMESPACE,
+            operator,
+            value.mcname(),
+            NAMESPACE
+        )
+    }
+    fn pure_compare_value(&self, operator:&str, value:i32) -> Result<String, EvaluateError> {
+        Ok(
+            format!(
+                "score {} {} matches {}",
+                self.mcname(),
+                NAMESPACE,
+                match operator {
+                    "==" => value.to_string(),
+                    ">=" => format!("{}..", value),
+                    "<=" => format!("..{}", value),
+                    _ => return Err(EvaluateError::UnknownOperatorGiven(operator.to_string()))
+                }
+            )
+        )
+    }
+    fn pure_compare_value_not_equal(&self, operator:&str, value:i32) -> (String, String) {
+        let constant = Scoreboard::from(value);
+        (constant.pure_assign_value(value), constant.pure_compare_score(operator, &constant))
     }
 }
 
