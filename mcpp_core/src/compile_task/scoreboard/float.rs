@@ -46,7 +46,9 @@ fn calc_score(score:&Scoreboard, operator:&str, source:&Scoreboard) -> Result<St
         Types::Flt => Ok(
             source.pure_calc_score(operator, source)
         ),
-        _ => Err(EvaluateError::OperationOccuredBetweenUnsupportedTypes)
+        _ => Err(
+            EvaluateError::OperationOccuredBetweenUnsupportedTypes(score.data_type.clone(), source.data_type.clone())
+        )
     }
 }
 pub fn assign(score:&Scoreboard, value:&Calcable) -> Result<String, EvaluateError> {
@@ -70,7 +72,7 @@ pub fn assign(score:&Scoreboard, value:&Calcable) -> Result<String, EvaluateErro
                 )
             },
             Types::Flt => Ok(score.pure_assign_score(s)),
-            _ => Err(EvaluateError::AssignOccuredBetweenUnsupportedTypes)
+            _ => Err(EvaluateError::AssignOccuredBetweenUnsupportedTypes(Types::Flt, value.get_type()))
         },
         Calcable::Mcf(f) => assign(
             score,

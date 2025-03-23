@@ -4,7 +4,6 @@ use crate::compile_task::{
         float::{self, get_magnif}, Calcable, Scoreboard, Types
     }
 };
-
 use super::get_temp_score;
 
 pub fn calc(score:&Scoreboard, operator:&str, target:&Calcable) -> Result<String, EvaluateError> {
@@ -37,7 +36,9 @@ fn calc_score(score:&Scoreboard, operator:&str, source:&Scoreboard) -> Result<St
                 )
             )
         },
-        _ => Err(EvaluateError::OperationOccuredBetweenUnsupportedTypes)
+        _ => Err(
+            EvaluateError::OperationOccuredBetweenUnsupportedTypes(Types::Int, source.data_type.clone())
+        )
     }
 }
 pub fn assign(scoreboard:&Scoreboard, value:&Calcable) -> Result<String, EvaluateError> {
@@ -62,7 +63,7 @@ pub fn assign(scoreboard:&Scoreboard, value:&Calcable) -> Result<String, Evaluat
                     )
                 },
                 Types::Non => Err(
-                    EvaluateError::AssignOccuredBetweenUnsupportedTypes
+                    EvaluateError::AssignOccuredBetweenUnsupportedTypes(Types::Int, value.get_type())
                 )
             }
         }

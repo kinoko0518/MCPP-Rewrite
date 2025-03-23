@@ -50,11 +50,32 @@ pub enum Calcable<'a> {
     Scr(&'a Scoreboard),
     Mcf(&'a MCFunction)
 }
+impl Calcable<'_> {
+    pub fn get_type(&self) -> Types {
+        match self {
+            Self::Int(_) => Types::Int,
+            Self::Flt(_) => Types::Flt,
+            Self::Scr(s) => s.data_type.clone(),
+            Self::Mcf(f) => f.ret_container.data_type.clone()
+        }
+    }
+}
 #[derive(Debug, Clone)]
 pub enum Types {
     Int,
     Flt,
     Non,
+}
+impl fmt::Display for Types {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f, "{}", match self {
+                Self::Int => "int",
+                Self::Flt => "float",
+                Self::Non => "none"
+            }
+        )
+    }
 }
 impl fmt::Display for Calcable<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -101,14 +122,14 @@ impl Scoreboard {
         match self.data_type {
             Types::Int => int::calc(&self, operator, source),
             Types::Flt => float::calc(&self, operator, source),
-            Types::Non => Err(EvaluateError::OperationOccuredBetweenUnsupportedTypes)
+            Types::Non => Err(EvaluateError::OperationOccuredBetweenUnsupportedTypes(Types::Non, source.get_type()))
         }
     }
     pub fn assign(&self, source:&Calcable) -> Result<String, EvaluateError> {
         match self.data_type {
             Types::Int => int::assign(&self, source),
             Types::Flt => float::assign(&self, source),
-            Types::Non => Err(EvaluateError::AssignOccuredBetweenUnsupportedTypes)
+            Types::Non => Err(EvaluateError::AssignOccuredBetweenUnsupportedTypes(source.get_type(), Types::Non))
         }
     }
     pub fn free(&self) -> String {

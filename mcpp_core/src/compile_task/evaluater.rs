@@ -1,12 +1,14 @@
 use crate::Language;
 use crate::CURRENT_LANGUAGE;
 
+use super::scoreboard::Types;
 // MC++ Crates
 use super::CompileTask;
 use super::Scoreboard;
 use super::scoreboard::Calcable;
 use super::MCFunction;
 
+use core::f32;
 // Outer Crates
 use std::fmt;
 use std::vec;
@@ -46,19 +48,30 @@ fn calc_test() {
     assert_eq!(
         evaluate(&mut task, &formula).unwrap(),
         vec![
-            "# c = 1 + b * 3 / 4".to_string(),
-            "scoreboard players set #Calc.TEMP MCPP.var 4".to_string(),
-            "scoreboard players set #CONSTANT.3 MCPP.var 3\nscoreboard players operation #Calc.TEMP MCPP.var /= #CONSTANT.3 MCPP.var".to_string(),
-            "scoreboard players operation #Calc.TEMP MCPP.var *= #test.b MCPP.var".to_string(),
-            "scoreboard players add #Calc.TEMP MCPP.var 1".to_string(),
-            "scoreboard players operation #c MCPP.var = #Calc.TEMP MCPP.var".to_string()
-        ]
+            "# c = 1 + b * 3 / 4",
+            "scoreboard players set #Calc.TEMP MCPP.var 4",
+            "scoreboard players set #CONSTANT.3 MCPP.var 3\nscoreboard players operation #Calc.TEMP MCPP.var /= #CONSTANT.3 MCPP.var",
+            "scoreboard players operation #Calc.TEMP MCPP.var *= #test.b MCPP.var",
+            "scoreboard players add #Calc.TEMP MCPP.var 1",
+            "scoreboard players operation #c MCPP.var = #Calc.TEMP MCPP.var"
+        ].iter().map(|str| str.to_string()).collect::<Vec<String>>()
     );
+}
+#[test]
+fn float_calc_test() {
+    let mut task = CompileTask::new();
+    task.define_variable(
+        "b".to_string(),
+        vec!["test".to_string()],
+        Calcable::Int(12)
+    ).unwrap();
+    println!("{:?}", evaluate(&mut task, "d:float = 0.01 + 2").unwrap());
 }
 
 #[derive(Clone, Copy, Debug)]
 enum FormulaToken<'a> {
     Int(i32),
+    Float(f32),
     Scoreboard(&'a Scoreboard),
     Operator(Operator),
     MCFunction(&'a MCFunction)
@@ -95,6 +108,7 @@ impl std::fmt::Display for FormulaToken<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FormulaToken::Int(i) => write!(f, "{}", i.to_string()),
+            FormulaToken::Float(fl) => write!(f, "{}", fl.to_string()),
             FormulaToken::Operator(o) => write!(f, "{}", o),
             FormulaToken::Scoreboard(s) => write!(f,"{}", s),
             FormulaToken::MCFunction(mcf) => write!(f, "{}(...)", mcf.name)
@@ -133,31 +147,34 @@ impl PartialEq for FormulaToken<'_> {
 /// evaluate(&mut compiler, &formula).unwrap();
 /// ```
 pub enum EvaluateError {
-    OperationOccuredBetweenUnsupportedTypes,
-    AssignOccuredBetweenUnsupportedTypes,
+    OperationOccuredBetweenUnsupportedTypes(Types, Types),
+    AssignOccuredBetweenUnsupportedTypes(Types, Types),
     UndefinedFunctionCalled(String),
     UndefinedVariableReferenced(String),
     CouldntParseANumber(String),
-    UnknownOperatorGiven(String)
+    UnknownOperatorGiven(String),
+    UnknownTypeAnnotation(String)
 }
 impl fmt::Display for EvaluateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match CURRENT_LANGUAGE {
             Language::English => match self {
-                Self::AssignOccuredBetweenUnsupportedTypes => todo!(),
-                Self::OperationOccuredBetweenUnsupportedTypes => todo!(),
+                Self::AssignOccuredBetweenUnsupportedTypes(value, onto) => format!("Assigning {} type value onto {} type variable is undefined operation.", value, onto),
+                Self::OperationOccuredBetweenUnsupportedTypes(left, right) => format!("Calclation between {} and {} is undefined operation.", left, right),
                 Self::UndefinedFunctionCalled(func_name) => format!("An undefined function, {}(...) called.", func_name),
                 Self::UndefinedVariableReferenced(var_name) => format!("An undefined variable, {} referenced.", var_name),
                 Self::CouldntParseANumber(invalid_num) => format!("{} couldn't be solved as number.", invalid_num),
-                Self::UnknownOperatorGiven(invalid_oper) => format!("{} couldn't be solved as operator.", invalid_oper)
+                Self::UnknownOperatorGiven(invalid_oper) => format!("{} couldn't be solved as operator.", invalid_oper),
+                Self::UnknownTypeAnnotation(_type) => format!("The variable was annotated as {}, But {} is unknown", _type, _type)
             },
             Language::Japanese => match self {
-                Self::AssignOccuredBetweenUnsupportedTypes => todo!(),
-                Self::OperationOccuredBetweenUnsupportedTypes => todo!(),
+                Self::AssignOccuredBetweenUnsupportedTypes(value, onto) => format!("{}型の変数に{}型の値を代入する操作は未定義です。", onto, value),
+                Self::OperationOccuredBetweenUnsupportedTypes(left, right) => format!("{}型と{}型の間での計算は未定義操作です。", left, right),
                 Self::UndefinedFunctionCalled(func_name) => format!("{}(...)は呼び出されましたが、宣言されていません。", func_name),
                 Self::UndefinedVariableReferenced(var_name) => format!("{}は参照されましたが、宣言されていません。", var_name),
                 Self::CouldntParseANumber(invalid_num) => format!("{}を数字として処理できませんでした。", invalid_num),
-                Self::UnknownOperatorGiven(invalid_oper) => format!("{}を算術記号として処理できませんでした。", invalid_oper)
+                Self::UnknownOperatorGiven(invalid_oper) => format!("{}を算術記号として処理できませんでした。", invalid_oper),
+                Self::UnknownTypeAnnotation(_type) => format!("変数は{}として型注釈されていますが、{}は有効な型ではありません。", _type, _type)
             }
         })
     }
@@ -177,17 +194,30 @@ fn to_operator(input:&str) -> Result<Operator, EvaluateError> {
 /// The function to guess that what given token is and convert it a FormulaToken.
 fn to_a_formula_token<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<FormulaToken<'a>, EvaluateError> {
     let _input = input.trim();
+    let float_regex = Regex::new("^[0-9]*[.][0-9]+$").unwrap();
+    let int_regex = Regex::new("^[0-9]+$").unwrap();
+    let func_regex = Regex::new("^([a-z]|[A-Z]|[0-9_])+[(].*[)]$").unwrap();
+
     if ["+", "-", "*", "/", "%", "^"].contains(&_input) {
+        // Operator
         match to_operator(_input) {
             Ok(oper) => Ok(FormulaToken::Operator(oper)),
             Err(e) => Err(e)
         }
-    } else if Regex::new("^[0-9]+$").unwrap().is_match(&_input) {
+    } else if float_regex.is_match(_input) {
+        // Float
+        match _input.parse::<f32>() {
+            Ok(f) => Ok(FormulaToken::Float(f)),
+            Err(_) => Err(EvaluateError::CouldntParseANumber(_input.to_string()))
+        }
+    } else if int_regex.is_match(_input) {
+        // Int
         match _input.parse::<i32>() {
             Ok(i) => Ok(FormulaToken::Int(i)),
             Err(_) => Err(EvaluateError::CouldntParseANumber(_input.to_string()))
         }
-    } else if Regex::new("^([a-z]|[A-Z]|[0-9_])+[(].*[)]$").unwrap().is_match(&input) {
+    } else if func_regex.is_match(input) {
+        // Function
         {
             let func_name = input.split_once("(").unwrap().0.to_string();
             match compiler.get_function(&func_name) {
@@ -196,6 +226,7 @@ fn to_a_formula_token<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<For
             }
         }
     } else {
+        // Variable
         match compiler.get_variable(&_input.to_string()) {
             Some(var) => Ok(FormulaToken::Scoreboard(var)),
             None => Err(EvaluateError::UndefinedVariableReferenced(input.to_string()))
@@ -204,7 +235,7 @@ fn to_a_formula_token<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<For
 }
 /// The pure function to convert &str type formula onto vector of FormulaToken(s).
 fn to_formula_tokens<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<Vec<FormulaToken<'a>>, EvaluateError> {
-    let re = Regex::new(r"(\d+|[a-zA-Z]+|[\+\-\*/])").unwrap();
+    let re = Regex::new(r"(\d*[.]\d+|\d+|[a-zA-Z]+|[\+\-\*/])").unwrap();
     let splitted:Vec<&'a str> = re
         .find_iter(input)
         .map(|m| m.as_str())
@@ -215,10 +246,7 @@ fn to_formula_tokens<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<Vec<
         .collect::<Vec<Result<FormulaToken<'a>, EvaluateError>>>();
     let mut valid_tokens:Vec<FormulaToken<'a>> = Vec::new();
     for token in tokens {
-        match token {
-            Ok(o) => { valid_tokens.push(o); }
-            Err(e) => { return Err(e); }
-        }
+        valid_tokens.push(token?)
     }
     Ok(valid_tokens)
 }
@@ -229,6 +257,7 @@ fn to_rpn<'a>(input:Vec<FormulaToken<'a>>) -> Vec<FormulaToken<'a>> {
     for token in input {
         match token {
             FormulaToken::Int(_)
+                | FormulaToken::Float(_)
                 | FormulaToken::Scoreboard(_)
                 | FormulaToken::MCFunction(_) => out_queue.push(token),
             FormulaToken::Operator(o) => {
@@ -266,10 +295,10 @@ fn to_rpn<'a>(input:Vec<FormulaToken<'a>>) -> Vec<FormulaToken<'a>> {
 /// 
 /// The calcation commands will be kept in the first element of tuple,
 /// and a scoreboard that contains a result will be kept in the secound element of tuple.
-fn calc_rpn(formula:Vec<FormulaToken>) -> Result<(Vec<String>, Scoreboard), EvaluateError> {
+fn calc_rpn(formula:Vec<FormulaToken>, temp_score_data_type:Types) -> Result<(Vec<String>, Scoreboard), EvaluateError> {
     let temp = Scoreboard {
         name : "TEMP".to_string(),
-        data_type : super::scoreboard::Types::Int,
+        data_type : temp_score_data_type,
         scope : vec!["Calc".to_string()]
     };
     let mut responce:Vec<String> = Vec::new();
@@ -277,6 +306,7 @@ fn calc_rpn(formula:Vec<FormulaToken>) -> Result<(Vec<String>, Scoreboard), Eval
     for token in &formula {
         match token {
             FormulaToken::Int(i) => stack.push(Calcable::Int(*i)),
+            FormulaToken::Float(f) => stack.push(Calcable::Flt(*f)),
             FormulaToken::Scoreboard(s) => stack.push(Calcable::Scr(s)),
             FormulaToken::MCFunction(f) => if &formula.len() <= &(1 as usize) { responce.push(f.call()); }
             else { stack.push(Calcable::Mcf(f)) },
@@ -295,24 +325,53 @@ fn calc_rpn(formula:Vec<FormulaToken>) -> Result<(Vec<String>, Scoreboard), Eval
     }
     Ok((responce, temp))
 }
+fn implicate_lhs(lhs:&str) -> Result<(String, Types), EvaluateError> {
+    if lhs.contains(":") {
+        let splitted = lhs.split_once(":").unwrap();
+        Ok((
+            splitted.0.to_string(),
+            match splitted.1 {
+                "int" => Types::Int,
+                "float" => Types::Flt,
+                _ => {
+                    return Err(EvaluateError::UnknownTypeAnnotation(splitted.1.to_string()))
+                }
+            }
+        ))
+    } else {
+        Ok((
+            lhs.to_string(),
+            Types::Int
+        ))
+    }
+}
 
 /// The impure function for evaluate a line.
 /// 
 /// It returns commands to apply the operations scribed on a formula.
 /// This function modify CompileTask because of definition of variables are processed in this function.
-pub fn evaluate(compiler:&mut CompileTask, formula:&String) -> Result<Vec<String>, EvaluateError> {
+pub fn evaluate(compiler:&mut CompileTask, formula:&str) -> Result<Vec<String>, EvaluateError> {
     if !formula.is_empty() {
-        let mut lhs = "";
+        let mut lhs = String::new();
+        let mut data_type = Types::Int;
         let rhs = match formula.split_once("=") {
-            Some(s) => { lhs = s.0; s.1 }
-            None => formula.as_str()
+            Some(s) => {
+                let implicated = implicate_lhs(s.0.trim())?;
+                lhs = implicated.0;
+                data_type = implicated.1;
+                s.1
+            }
+            None => formula
         };
-        let calced = calc_rpn(to_rpn(
+        let calced = calc_rpn(
+            to_rpn(
                 match to_formula_tokens(&compiler, rhs) {
                     Ok(o) => o,
                     Err(e) => { return Err(e) }
                 }
-        ))?;
+            ),
+            data_type
+        )?;
         let mut result =if !lhs.is_empty() {
             let mut temp = calced.0;
             temp.push(
