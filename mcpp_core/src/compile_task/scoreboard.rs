@@ -1,5 +1,6 @@
 mod int;
 mod float;
+mod bool;
 
 use std::{fmt, vec};
 

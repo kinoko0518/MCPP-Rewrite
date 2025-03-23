@@ -4,9 +4,7 @@ use crate::compile_task::{
         float, Calcable, Scoreboard, Types
     }
 };
-
 use super::get_temp_score;
-
 pub const ACCURATION:u32 = 3;
 
 pub fn get_magnif() -> i32 {
@@ -25,10 +23,30 @@ pub fn calc(score:&Scoreboard, operator:&str, target:&Calcable) -> Result<String
     }
 }
 fn calc_num(score:&Scoreboard, operator:&str, num:i32) -> Result<String, EvaluateError> {
-    score.pure_calc_num(operator, num * get_magnif())
+    match operator {
+        "+" | "-" => score.pure_calc_num(operator, num * get_magnif()),
+        _ => score.pure_calc_num(operator, num)
+    }
 }
 fn calc_float(score:&Scoreboard, operator:&str, num:f32) -> Result<String, EvaluateError> {
-    score.pure_calc_num(operator, scale_float(num))
+    match operator {
+        "+" | "-" => score.pure_calc_num(operator, scale_float(num)),
+        "*" => Ok(
+            format!(
+                "{}\n{}",
+                score.pure_calc_num(operator, scale_float(num))?,
+                score.pure_calc_num("/", get_magnif().pow(2))?
+            )
+        ),
+        "/" => Ok(
+            format!(
+                "{}\n{}",
+                score.pure_calc_num("*", get_magnif())?,
+                score.pure_calc_num("/", scale_float(num))?
+            )
+        ),
+        _ => Err(EvaluateError::OperationOccuredBetweenUnsupportedTypes(score.data_type.clone(), Types::Flt))
+    }
 }
 fn calc_score(score:&Scoreboard, operator:&str, source:&Scoreboard) -> Result<String, EvaluateError> {
     match source.data_type {

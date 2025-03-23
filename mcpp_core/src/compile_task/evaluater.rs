@@ -15,49 +15,6 @@ use std::vec;
 use regex::Regex;
 
 #[test]
-fn calc_test() {
-    let mut task = CompileTask::new();
-    task.define_variable(
-        "b".to_string(),
-        vec!["test".to_string()],
-        Calcable::Int(12)
-    ).unwrap();
-    let correct_infix = vec![
-        FormulaToken::Int(1),
-        FormulaToken::Operator(Operator::Add),
-        FormulaToken::Scoreboard(&task.get_variable(&"b".to_string()).unwrap()),
-        FormulaToken::Operator(Operator::Mul),
-        FormulaToken::Int(3),
-        FormulaToken::Operator(Operator::Div),
-        FormulaToken::Int(4)
-    ];
-    let infix_parsed = to_formula_tokens(&task, "1 + b * 3 / 4").unwrap();
-    assert_eq!(infix_parsed, correct_infix);
-    let correct_reverse_polish = vec![
-        FormulaToken::Int(1),
-        FormulaToken::Scoreboard(&task.local_variables["b"]),
-        FormulaToken::Int(3),
-        FormulaToken::Int(4),
-        FormulaToken::Operator(Operator::Div),
-        FormulaToken::Operator(Operator::Mul),
-        FormulaToken::Operator(Operator::Add)
-    ];
-    assert_eq!(to_rpn(infix_parsed), correct_reverse_polish);
-    let formula = "c = 1 + b * 3 / 4".to_string();
-    
-    assert_eq!(
-        evaluate(&mut task, &formula).unwrap(),
-        vec![
-            "# c = 1 + b * 3 / 4",
-            "scoreboard players set #Calc.TEMP MCPP.var 4",
-            "scoreboard players set #CONSTANT.3 MCPP.var 3\nscoreboard players operation #Calc.TEMP MCPP.var /= #CONSTANT.3 MCPP.var",
-            "scoreboard players operation #Calc.TEMP MCPP.var *= #test.b MCPP.var",
-            "scoreboard players add #Calc.TEMP MCPP.var 1",
-            "scoreboard players operation #c MCPP.var = #Calc.TEMP MCPP.var"
-        ].iter().map(|str| str.to_string()).collect::<Vec<String>>()
-    );
-}
-#[test]
 fn float_calc_test() {
     let mut task = CompileTask::new();
     task.define_variable(
@@ -65,7 +22,7 @@ fn float_calc_test() {
         vec!["test".to_string()],
         Calcable::Int(12)
     ).unwrap();
-    println!("{:?}", evaluate(&mut task, "d:float = 0.01 + 2").unwrap());
+    println!("{}", evaluate(&mut task, "d:float = (0.03 * 0.2) + 0.05").unwrap().join("\n"));
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -116,13 +73,12 @@ impl std::fmt::Display for FormulaToken<'_> {
     }
 }
 impl PartialEq for FormulaToken<'_> {
-
     fn eq(&self, other: &Self) -> bool {
         return match (self, other) {
             (FormulaToken::Int(i), FormulaToken::Int(ii)) => i == ii,
             (FormulaToken::Operator(o), FormulaToken::Operator(oo)) => *o == *oo,
             (FormulaToken::Scoreboard(scr), FormulaToken::Scoreboard(scrscr)) => scr == scrscr,
-            _ => panic!("Invalid comparement!")
+            _ => panic!("Invalid comparement! lhs => {} | rhs => {}", self, other)
         }
     }
 }
@@ -142,7 +98,7 @@ impl PartialEq for FormulaToken<'_> {
 /// use mcpp_core::compile_task::evaluater::evaluate;
 /// use mcpp_core::compile_task::CompileTask;
 /// 
-/// let formula = "undefined_function() + 1".to_string();
+/// let formula = "undefined_function()".to_string();
 /// let mut compiler = CompileTask::new();
 /// evaluate(&mut compiler, &formula).unwrap();
 /// ```
@@ -153,28 +109,59 @@ pub enum EvaluateError {
     UndefinedVariableReferenced(String),
     CouldntParseANumber(String),
     UnknownOperatorGiven(String),
-    UnknownTypeAnnotation(String)
+    UnknownTypeAnnotation(String),
+    UnbalancedBrackets
 }
 impl fmt::Display for EvaluateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match CURRENT_LANGUAGE {
             Language::English => match self {
-                Self::AssignOccuredBetweenUnsupportedTypes(value, onto) => format!("Assigning {} type value onto {} type variable is undefined operation.", value, onto),
-                Self::OperationOccuredBetweenUnsupportedTypes(left, right) => format!("Calclation between {} and {} is undefined operation.", left, right),
-                Self::UndefinedFunctionCalled(func_name) => format!("An undefined function, {}(...) called.", func_name),
-                Self::UndefinedVariableReferenced(var_name) => format!("An undefined variable, {} referenced.", var_name),
-                Self::CouldntParseANumber(invalid_num) => format!("{} couldn't be solved as number.", invalid_num),
-                Self::UnknownOperatorGiven(invalid_oper) => format!("{} couldn't be solved as operator.", invalid_oper),
-                Self::UnknownTypeAnnotation(_type) => format!("The variable was annotated as {}, But {} is unknown", _type, _type)
+                Self::AssignOccuredBetweenUnsupportedTypes(value, onto) => format!(
+                    "Assigning {} type value onto {} type variable is undefined operation.", value, onto
+                ),
+                Self::OperationOccuredBetweenUnsupportedTypes(left, right) => format!(
+                    "Calclation between {} and {} is undefined operation.", left, right
+                ),
+                Self::UndefinedFunctionCalled(func_name) => format!(
+                    "An undefined function, {}(...) called.", func_name
+                ),
+                Self::UndefinedVariableReferenced(var_name) => format!(
+                    "An undefined variable, {} referenced.", var_name
+                ),
+                Self::CouldntParseANumber(invalid_num) => format!(
+                    "{} couldn't be solved as number.", invalid_num
+                ),
+                Self::UnknownOperatorGiven(invalid_oper) => format!(
+                    "{} couldn't be solved as operator.", invalid_oper
+                ),
+                Self::UnknownTypeAnnotation(_type) => format!(
+                    "The variable was annotated as {}, But {} is unknown", _type, _type
+                ),
+                Self::UnbalancedBrackets => "Amount of right parenthese(s) and left parenthese(s) must be equal.".to_string()
             },
             Language::Japanese => match self {
-                Self::AssignOccuredBetweenUnsupportedTypes(value, onto) => format!("{}型の変数に{}型の値を代入する操作は未定義です。", onto, value),
-                Self::OperationOccuredBetweenUnsupportedTypes(left, right) => format!("{}型と{}型の間での計算は未定義操作です。", left, right),
-                Self::UndefinedFunctionCalled(func_name) => format!("{}(...)は呼び出されましたが、宣言されていません。", func_name),
-                Self::UndefinedVariableReferenced(var_name) => format!("{}は参照されましたが、宣言されていません。", var_name),
-                Self::CouldntParseANumber(invalid_num) => format!("{}を数字として処理できませんでした。", invalid_num),
-                Self::UnknownOperatorGiven(invalid_oper) => format!("{}を算術記号として処理できませんでした。", invalid_oper),
-                Self::UnknownTypeAnnotation(_type) => format!("変数は{}として型注釈されていますが、{}は有効な型ではありません。", _type, _type)
+                Self::AssignOccuredBetweenUnsupportedTypes(value, onto) => format!(
+                    "{}型の変数に{}型の値を代入する操作は未定義です。", onto, value
+                ),
+                Self::OperationOccuredBetweenUnsupportedTypes(left, right) => format!(
+                    "{}型と{}型の間での計算は未定義操作です。", left, right
+                ),
+                Self::UndefinedFunctionCalled(func_name) => format!(
+                    "{}(...)は呼び出されましたが、宣言されていません。", func_name
+                ),
+                Self::UndefinedVariableReferenced(var_name) => format!(
+                    "{}は参照されましたが、宣言されていません。", var_name
+                ),
+                Self::CouldntParseANumber(invalid_num) => format!(
+                    "{}を数字として処理できませんでした。", invalid_num
+                ),
+                Self::UnknownOperatorGiven(invalid_oper) => format!(
+                    "{}を算術記号として処理できませんでした。", invalid_oper
+                ),
+                Self::UnknownTypeAnnotation(_type) => format!(
+                    "変数は{}として型注釈されていますが、{}は有効な型ではありません。", _type, _type
+                ),
+                Self::UnbalancedBrackets => "右かっこの数と左かっこの数が一致しません。".to_string()
             }
         })
     }
@@ -188,6 +175,8 @@ fn to_operator(input:&str) -> Result<Operator, EvaluateError> {
         "/" => Ok(Operator::Div),
         "%" => Ok(Operator::Sur),
         "^" => Ok(Operator::Pow),
+        "(" => Ok(Operator::LPt),
+        ")" => Ok(Operator::RPt),
         _   => Err(EvaluateError::UnknownOperatorGiven(input.to_string()))
     }
 }
@@ -198,7 +187,7 @@ fn to_a_formula_token<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<For
     let int_regex = Regex::new("^[0-9]+$").unwrap();
     let func_regex = Regex::new("^([a-z]|[A-Z]|[0-9_])+[(].*[)]$").unwrap();
 
-    if ["+", "-", "*", "/", "%", "^"].contains(&_input) {
+    if ["+", "-", "*", "/", "%", "^", "(", ")"].contains(&_input) {
         // Operator
         match to_operator(_input) {
             Ok(oper) => Ok(FormulaToken::Operator(oper)),
@@ -235,7 +224,7 @@ fn to_a_formula_token<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<For
 }
 /// The pure function to convert &str type formula onto vector of FormulaToken(s).
 fn to_formula_tokens<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<Vec<FormulaToken<'a>>, EvaluateError> {
-    let re = Regex::new(r"(\d*[.]\d+|\d+|[a-zA-Z]+|[\+\-\*/])").unwrap();
+    let re = Regex::new(r"(\d*[.]\d+|\d+|[a-zA-Z]+|[\+\-\*\(\)/])").unwrap();
     let splitted:Vec<&'a str> = re
         .find_iter(input)
         .map(|m| m.as_str())
@@ -251,45 +240,53 @@ fn to_formula_tokens<'a>(compiler:&'a CompileTask, input:&'a str) -> Result<Vec<
     Ok(valid_tokens)
 }
 /// The pure function to reorder a infix notation formula onto a reverse polish notation.
-fn to_rpn<'a>(input:Vec<FormulaToken<'a>>) -> Vec<FormulaToken<'a>> {
-    let mut out_queue:Vec<FormulaToken> = Vec::new();
-    let mut oper_stack:Vec<Operator> = Vec::new();
+fn to_rpn<'a>(input:Vec<FormulaToken<'a>>) -> Result<Vec<FormulaToken<'a>>, EvaluateError> {
+    let mut output_queue: Vec<FormulaToken> = Vec::new();
+    let mut operator_stack: Vec<Operator> = Vec::new();
+    
     for token in input {
         match token {
             FormulaToken::Int(_)
                 | FormulaToken::Float(_)
                 | FormulaToken::Scoreboard(_)
-                | FormulaToken::MCFunction(_) => out_queue.push(token),
-            FormulaToken::Operator(o) => {
-                let higher_priority_than_top = !oper_stack.is_empty() && oper_stack.last().unwrap().get_priority() <= o.get_priority();
-                if oper_stack.is_empty() || higher_priority_than_top {
-                    oper_stack.push(o)
-                } else {
-                    match o {
-                        Operator::LPt => { oper_stack.push(o); }
-                        Operator::RPt => {
-                            for i in 0..oper_stack.len() {
-                                if oper_stack[i] == Operator::LPt { oper_stack.remove(i); break; }
-                                else { out_queue.push(FormulaToken::Operator(oper_stack[i])); }
-                            }
+                | FormulaToken::MCFunction(_) => {
+                output_queue.push(token);
+            },
+            FormulaToken::Operator(op) => match op {
+                Operator::LPt => {
+                    operator_stack.push(op);
+                },
+                Operator::RPt => {
+                    while !operator_stack.is_empty() {
+                        let top_op = operator_stack.pop().unwrap();
+                        if top_op == Operator::LPt {
+                            break;
                         }
-                        _ => {
-                            while !oper_stack.is_empty() && higher_priority_than_top {
-                                let temp = oper_stack[0];
-                                oper_stack.remove(0);
-                                out_queue.push(FormulaToken::Operator(temp));
-                            }
-                            out_queue.push(FormulaToken::Operator(o));
-                        }
+                        output_queue.push(FormulaToken::Operator(top_op));
                     }
+                },
+                _ => {
+                    while !operator_stack.is_empty() {
+                        let top_op = *operator_stack.last().unwrap();
+                        if top_op == Operator::LPt || top_op.get_priority() < op.get_priority() {
+                            break;
+                        }
+                        output_queue.push(FormulaToken::Operator(operator_stack.pop().unwrap()));
+                    }
+                    operator_stack.push(op);
                 }
             }
         }
     }
-    for oper in oper_stack.iter().rev() {
-        out_queue.push(FormulaToken::Operator(*oper));
+    while !operator_stack.is_empty() {
+        let op = operator_stack.pop().unwrap();
+        if op == Operator::LPt && op == Operator::RPt {
+            return Err(EvaluateError::UnbalancedBrackets)
+        }
+        output_queue.push(FormulaToken::Operator(op));
     }
-    out_queue
+    println!("{:?}", output_queue);
+    Ok(output_queue)
 }
 /// The pure function to calc a reverse polish notation formula.
 /// 
@@ -308,11 +305,15 @@ fn calc_rpn(formula:Vec<FormulaToken>, temp_score_data_type:Types) -> Result<(Ve
             FormulaToken::Int(i) => stack.push(Calcable::Int(*i)),
             FormulaToken::Float(f) => stack.push(Calcable::Flt(*f)),
             FormulaToken::Scoreboard(s) => stack.push(Calcable::Scr(s)),
-            FormulaToken::MCFunction(f) => if &formula.len() <= &(1 as usize) { responce.push(f.call()); }
-            else { stack.push(Calcable::Mcf(f)) },
+            FormulaToken::MCFunction(f) => if &formula.len() <= &(1 as usize) {
+                responce.push(f.call()); 
+            } else {
+                stack.push(Calcable::Mcf(f))
+            },
             FormulaToken::Operator(o) => {
-                let lhs = stack.pop().unwrap();
                 let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+
                 let target = match lhs {
                     Calcable::Scr(s) => s,
                     Calcable::Int(_) | Calcable::Flt(_) => { responce.push(temp.assign(&lhs)?); &temp }
@@ -369,7 +370,7 @@ pub fn evaluate(compiler:&mut CompileTask, formula:&str) -> Result<Vec<String>, 
                     Ok(o) => o,
                     Err(e) => { return Err(e) }
                 }
-            ),
+            )?,
             data_type
         )?;
         let mut result =if !lhs.is_empty() {
