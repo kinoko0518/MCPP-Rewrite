@@ -2,8 +2,6 @@ use core::fmt;
 use std::collections::HashMap;
 
 use evaluater::EvaluateError;
-use regex::Regex;
-use scoreboard::Calcable;
 pub use scoreboard::Scoreboard;
 pub use mcfunction::MCFunction;
 
@@ -16,7 +14,7 @@ pub mod mcfunction;
 #[test]
 fn test() {
     let mut compiler = CompileTask::new();
-    println!("{}", compiler.compile("{a = 10 * 5 + 7}", "test").unwrap());
+    println!("\n{}", (compiler.compile("if (1 - 1) * 0 {a = (0.1 + 2) * 5}", "test").unwrap().inside));
 }
 
 #[derive(Clone)]
@@ -97,18 +95,17 @@ enum SyntaxType {
     Sentence,
     Formula,
 }
-enum SentenceType {
-    IfSentence,
-    WhileSentence,
-    ForSentence,
-    FuncDefinition,
-    Sentence
+enum Line {
+    Comment(String),
+    Formula(String),
+    Sentence(Sentence)
 }
 #[derive(Clone, Debug)]
 pub enum SentenceError {
     UnnamedFunction,
     SentenceHasNoStartIdentifier,
     SentenceDoesntEndWithEndSpecifier,
+    InvalidFormula(EvaluateError)
 }
 impl fmt::Display for SentenceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -116,34 +113,22 @@ impl fmt::Display for SentenceError {
             Language::English => match self {
                 Self::UnnamedFunction => "A function must has a name.".to_string(),
                 Self::SentenceHasNoStartIdentifier => "A sentence must has a {.".to_string(),
-                Self::SentenceDoesntEndWithEndSpecifier => "A sentence must ends with }.".to_string()
+                Self::SentenceDoesntEndWithEndSpecifier => "A sentence must ends with }.".to_string(),
+                Self::InvalidFormula(e) => format!("Error(s) occured while evaluating a formula. Detail => {}", e)
             },
             Language::Japanese => match self {
                 Self::UnnamedFunction => "関数は名前を持たなければなりません。".to_string(),
                 Self::SentenceHasNoStartIdentifier => "文は{を持たなければなりません。".to_string(),
-                Self::SentenceDoesntEndWithEndSpecifier => "文は}で終了しなければなりません。".to_string()
+                Self::SentenceDoesntEndWithEndSpecifier => "文は}で終了しなければなりません。".to_string(),
+                Self::InvalidFormula(e) => format!("式の評価中にエラーが発生しました。詳細 => {}", e)
             }
         })
     }
 }
-#[derive(Clone)]
-enum Error {
-    EvaluateError(evaluater::EvaluateError),
-    SentenceError(SentenceError)
-}
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Self::EvaluateError(e) => format!("{}", e),
-            Self::SentenceError(e) => format!("{}", e)
-        })
-    }
-}
-struct Sentence<'a> {
+struct Sentence {
     pub name : String,
-    pub sentence_type : SentenceType,
-    pub specifiers : Vec<&'a str>,
-    pub parsed_lines : Vec<String>
+    pub specifiers : Vec<String>,
+    pub parsed_lines : Vec<Line>
 }
 
 /// This is a function to generate expected length random charactors.
@@ -166,45 +151,13 @@ fn generate_random_string(length: usize) -> String {
     random_string
 }
 
-impl CompileTask {
-    /// It is the function for define a variable with bondaging a given value.
-    /// # Example
-    /// ```
-    /// // This compile will end with successful although foo isn't defined in MC++ script.
-    /// let mut compiler = CompileTask::new();
-    /// compiler.define_variable("foo".to_string(), vec!["test".to_string], Calcable::Int(10));
-    /// compiler.compile("{bar = foo * 7}") // The result is equal to the result of compiling {bar = 10 * 7}
-    /// ```
-    fn define_variable(&mut self, name:String, scope:Vec<String>, value:Calcable) -> Result<String, EvaluateError> {
-        self.local_variables.insert(name.clone(),Scoreboard {
-            name  : {
-                if !Regex::new("[a-zA-Z_]+")
-                    .unwrap()
-                    .is_match(name.as_str()) {
-                        println!("⚠️  {} is not constracted from romantic alphabet nether underbar.", name)
-                }
-                name.clone()
-            },
-            data_type : match value {
-                Calcable::Int(_) => scoreboard::Types::Int,
-                Calcable::Flt(_) => scoreboard::Types::Flt,
-                Calcable::Bln(_) => scoreboard::Types::Bln,
-                Calcable::Scr(s) => s.data_type.clone(),
-                Calcable::Mcf(mcf) => mcf.ret_container.data_type.clone(),
-            },
-            scope : scope
-        });
-        self.get_variable(&name).unwrap().assign(&value)
+impl Sentence {
+    fn guess_line_syntax(input:&str) -> SyntaxType {
+        let trimed = input.trim();
+        if trimed.starts_with('#') { SyntaxType::Comment }
+        else if trimed.ends_with('}') { SyntaxType::Sentence }
+        else { SyntaxType::Formula }
     }
-    /// It will return a specifier and a inside of given sentence.
-    /// # Example
-    /// ```
-    /// // It will end with successful
-    /// assert_eq!(
-    ///     CompileTask::split_sentence("fn foo { c = 10 }"),
-    ///     ("fn foo", "c = 10".to_string())
-    /// );
-    /// ```
     fn split_sentence(raw:&str) -> Result<(&str, String), SentenceError> {
         let specifier_and_inside:(&str, &str) = match raw.split_once("{") {
             Some(s) => s,
@@ -214,151 +167,173 @@ impl CompileTask {
         if !specifier_and_inside.1.ends_with('}') {
             return Err(SentenceError::SentenceDoesntEndWithEndSpecifier)
         }
-        let inside:String = specifier_and_inside.1.to_string();
+        let inside:String = specifier_and_inside.1[..specifier_and_inside.1.len() - 1].to_string();
         if inside == String::new() {
             println!("⚠️  A sentence, {}{{...}} is empty.", specifier);
         }
         Ok((specifier, inside))
     }
-    fn guess_line_syntax(input:&str) -> SyntaxType {
-        let trimed = input.trim();
-        if trimed.starts_with('#') { SyntaxType::Comment }
-        else if trimed.ends_with('}') { SyntaxType::Sentence }
-        else { SyntaxType::Formula }
-    }
-    fn implicate_sentence(raw:&str) -> Result<Sentence, SentenceError> {
+    pub fn onto_sentence(raw:&str) -> Result<Sentence, SentenceError> {
         // Split a given sentence onto a specialiser and a inside.
-        let implicated = match CompileTask::split_sentence(raw) {
+        let splitted = match Sentence::split_sentence(raw) {
             Ok(o) => o,
             Err(e) => return Err(e)
         };
         // Split a given specialiser onto tokens.
-        let tokenized_specializer:Vec<&str> = implicated
+        let tokenized_specializer:Vec<&str> = splitted
             .0
             .split_whitespace()
             .filter(|f| !f.is_empty())
             .collect();
-        let sentence_type = if tokenized_specializer.is_empty() {
-            SentenceType::Sentence
-        } else {
-            match *tokenized_specializer.get(0).unwrap() {
-                "if"    => SentenceType::IfSentence,
-                "for"   => SentenceType::ForSentence,
-                "while" => SentenceType::WhileSentence,
-                "fn"    => SentenceType::FuncDefinition,
-                _       => SentenceType::Sentence
-            }
-        };
-        let parsed = implicated
+        let parsed = splitted
             .1
-            .replace("}", ";}")
+            .replace("}", "};")
             .split(";")
             .map(|f| f.trim())
-            .filter(|f| !f.is_empty() && f != &"}")
+            .filter(|f| !f.is_empty() )
             .map(|f| f.to_string())
             .collect::<Vec<String>>();
-        let name:String = match sentence_type {
-            SentenceType::FuncDefinition => match tokenized_specializer.get(1) {
-                Some(s) => s.to_string(),
-                None => return Err(SentenceError::UnnamedFunction)
-            },
-            _ => generate_random_string(32)
+        let name:String = match tokenized_specializer.get(0) {
+            None => generate_random_string(30),
+            Some(s) => match *s {
+                "fn" => match tokenized_specializer.get(1) {
+                    Some(s) => s.to_string(),
+                    None => return Err(SentenceError::UnnamedFunction)
+                },
+                _ => generate_random_string(32)
+            }
         };
+        let mut lines:Vec<Line> = Vec::new();
+        for line in &parsed {
+            let line = match Self::guess_line_syntax(&line) {
+                SyntaxType::Comment => Line::Comment(line.clone()),
+                SyntaxType::Formula => Line::Formula(line.clone()),
+                SyntaxType::Sentence => Line::Sentence(Self::onto_sentence(&line)?)
+            };
+            lines.push(line);
+        }
         Ok(
             Sentence {
                 name : name,
-                sentence_type : sentence_type,
-                specifiers : tokenized_specializer,
-                parsed_lines : parsed
+                specifiers : tokenized_specializer
+                    .iter()
+                    .map(|f| f.to_string())
+                    .collect::<Vec<String>>(),
+                parsed_lines : lines
             }
         )
     }
-    /// It receives raw MC++ scripts in &str and returns compiled MCFunction.
-    /// 
-    /// The argument, "namespace" meant the pack name of compiled datapack.
-    pub fn compile(&mut self, raw:&str, namespace:&str) -> Result<MCFunction, SentenceError> {
+    fn compile_then_call(&self, compiler:&mut CompileTask, namespace:&str) -> Result<String, SentenceError> {
+        let mut slave_compiler = compiler.clone();
+        match slave_compiler.compile_sentence(self, namespace) {
+            Ok(o) => {
+                let compiled_name = o.name.clone();
+                compiler.local_functions.insert(compiled_name.clone(), o);
+                Ok(compiler.get_function(&compiled_name).unwrap().callment.clone())
+            },
+            Err(e) => Ok(
+                format!(
+                    "### {} ###\n### {} : {} ###",
+                    match CURRENT_LANGUAGE {
+                        Language::English => "Because of failture of compiling a sentence, a callment of the sentence was skipped.",
+                        Language::Japanese => "文はコンパイルに失敗したため、スキップされました。"
+                    },
+                    match CURRENT_LANGUAGE {
+                        Language::English => "The Error",
+                        Language::Japanese => "エラー内容"
+                    },
+                    e
+                )
+            )
+        }
+    }
+}
+
+impl CompileTask {
+    fn compile_sentence(&mut self, sentence:&Sentence, namespace:&str) -> Result<MCFunction, SentenceError> {
         let mut res:Vec<String> = Vec::new();
-        let mut occured_errors:Vec<Error> = Vec::new();
+        println!("Now compiling {}...", sentence.name);
 
-        let impl_sentence = match Self::implicate_sentence(raw) {
-            Ok(s) => s,
-            Err(e) => return Err(e)
-        };
-        println!("Now compiling {}...", impl_sentence.name);
-
-        for line in impl_sentence.parsed_lines {
-            match CompileTask::guess_line_syntax(line.as_str()) {
-                SyntaxType::Formula => res.push(
-                    match evaluater::evaluate(self, &line.to_string()) {
-                        Ok(o) => o.join("\n"),
-                        Err(e) => {
-                            occured_errors.push(Error::EvaluateError(e.clone()));
-                            format!(
-                                "### {} ###\n### {} -> {} ###",
-                                match CURRENT_LANGUAGE {
-                                    Language::English => "Because of evaluation error(s), evaluation of this line was skipped.",
-                                    Language::Japanese => "評価エラーのため、式の評価はスキップされました。"
-                                },
-                                match CURRENT_LANGUAGE {
-                                    Language::English => "The Error",
-                                    Language::Japanese => "エラー内容"
-                                },
-                                e
-                            )
-                        }
+        for line in &sentence.parsed_lines {
+            let compiled  =match line {
+                Line::Formula(f) => self.eval_line(&f),
+                Line::Sentence(s) => s.compile_then_call(self, namespace)?,
+                Line::Comment(c) => c.clone()
+            };
+            res.push(compiled);
+        }
+        let pure_callment = format!(
+            "function {}:{}{}{}",
+            namespace,
+            self.scope.clone().join("/"),
+            if self.scope.is_empty() {"/"} else {""},
+            sentence.name
+        );
+        let callment = match sentence.specifiers.get(0) {
+            Some(s) => match s.as_str() {
+                "if" => Ok(
+                    match evaluater::add_execution_condition(
+                        &self,
+                        sentence.name.as_str(),
+                        &pure_callment,
+                        &sentence.specifiers[1..].join(" "),
+                    ) {
+                        Ok(o) => o,
+                        Err(e) => return Err(SentenceError::InvalidFormula(e))
                     }
                 ),
-                SyntaxType::Sentence => res.push(
-                    {
-                        let mut slave_compiler = self.clone();
-                        match slave_compiler.compile(line.as_str(), namespace) {
-                            Ok(o) => {
-                                let compiled_name = o.name.clone();
-                                self.local_functions.insert(compiled_name.clone(), o);
-                                let compiled = self.get_function(&compiled_name).unwrap();
-                                compiled.save();
-                                compiled.call()
-                            },
-                            Err(e) => {
-                                occured_errors.push(Error::SentenceError(e.clone()));
-                                format!(
-                                    "### {} ###\n### {} : {} ###",
-                                    match CURRENT_LANGUAGE {
-                                        Language::English => "Because of failture of compiling a sentence, a callment of the sentence was skipped.",
-                                        Language::Japanese => "文はコンパイルに失敗したため、スキップされました。"
-                                    },
-                                    match CURRENT_LANGUAGE {
-                                        Language::English => "The Error",
-                                        Language::Japanese => "エラー内容"
-                                    },
-                                    e
-                                )
-                            }
-                        }
-                    }
-                ),
-                SyntaxType::Comment => res.push(line.to_string()),
+                _ => Ok(pure_callment)
+            },
+            None => Ok(pure_callment)
+        }?;
+        // Free variables
+        if !&self.local_variables.is_empty() {
+            res.push("\n# Free all of local variables".to_string());
+            for var in &self.local_variables {
+                res.push(var.1.free());
             }
         }
-        // Free variables
-        res.push("# Free all of local variables".to_string());
-        for var in &self.local_variables {
-            res.push(var.1.free());
-        }
-        println!("Compiling of {} ended successfully!", impl_sentence.name);
+        println!("Compiling of {} ended successfully!", sentence.name);
         Ok(
             MCFunction {
-                name : impl_sentence.name.to_string(),
+                name : sentence.name.to_string(),
                 inside : res.join("\n"),
-                path : self.scope.join("/"),
                 namespace : namespace.to_string(),
+                callment : callment,
+                child_func : self.local_functions
+                    .to_owned()
+                    .into_iter()
+                    .map(|f| f.1)
+                    .collect::<Vec<MCFunction>>(),
+                scope : self.scope.clone(),
+
                 ret_container : Scoreboard {
-                    name  : format!("TEMP.RETURN_VALUE.{}", impl_sentence.name),
+                    name  : format!("TEMP.RETURN_VALUE.{}", sentence.name),
                     data_type : scoreboard::Types::Non,
                     scope : Vec::new()
                 }
             }
         )
+    }
+    pub fn compile(&mut self, raw:&str, namespace:&str) -> Result<MCFunction, SentenceError> {
+        self.compile_sentence(&Sentence::onto_sentence(raw)?, namespace)
+    }
+    fn eval_line(&mut self, formula:&str) -> String {
+        match evaluater::evaluate(self, formula) {
+            Ok(compiled) => compiled.join("\n"),
+            Err(e) => format!(
+                "### {} ###\n### {} -> {} ###",
+                match CURRENT_LANGUAGE {
+                    Language::English => "Because of evaluation error(s), evaluation of this line was skipped.",
+                    Language::Japanese => "評価エラーのため、式の評価はスキップされました。"
+                },
+                match CURRENT_LANGUAGE {
+                    Language::English => "The Error",
+                    Language::Japanese => "エラー内容"
+                },
+                e
+            )
+        }
     }
     fn get_function(&self, name:&String) -> Option<&MCFunction> {
         if self.inherited_functions.contains_key(name) { Some(self.inherited_functions.get(name).unwrap()) }

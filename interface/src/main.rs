@@ -1,10 +1,11 @@
 pub mod build;
 pub mod init;
 pub mod input;
-pub mod output;
+pub mod cui;
 
 use std::env;
 use std::fs;
+use std::io::Write;
 
 fn get_current_path() -> String {
     env::current_dir()
@@ -19,6 +20,12 @@ fn is_chest_root(path:&str) -> bool {
         Ok(o) => o,
         Err(_) => false
     }
+}
+
+pub fn make_a_file(path:&str, file_name:&str, content:&str) -> std::io::Result<()> {
+    let mut file = fs::File::create(format!("{}/{}", path, file_name))?;
+    file.write(content.as_bytes())?;
+    Ok(())
 }
 
 #[test]
@@ -39,33 +46,16 @@ fn get_chest_root(from:&str) -> Result<String, ()> {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let current_path = get_current_path();
 
     match args.get(1) {
-        Some(s) => match s.as_str() {
-            "build" => {
-                let root = match args.get(2) {
-                    Some(s) => s.clone(),
-                    None => get_current_path()
-                };
-                let chest_root = get_chest_root(&root).unwrap();
-                build::build_datapack(
-                    format!("{}/MCPP.toml", &chest_root).as_str(),
-                    format!("{}/src/main.mcpp", &chest_root).as_str(),
-                    format!("{}/target", &chest_root).as_str()
-                );
-            },
-            "init" => { init::init(&current_path); },
-            "new" => {
-                init::new(
-                    args
-                        .get(2)
-                        .expect("The new command expects a name of the new project on the secound argument."),
-                    &current_path
-                ); 
-            },
-            _ => { println!("Invalid subcommand. You can try 'mcpp help' to get information.") }
-        },
+        Some(_) => cui::solve_args(
+            args[1..]
+                .iter()
+                .map(|f| f.as_str())
+                .collect::<Vec<&str>>()
+                .to_vec(),
+            get_current_path().as_str()
+        ),
         None => {
             println!("Hello, you can try these subcommands.\nbuild (path)\n   The subcommand for compile a file.\nhelp\n  You can receive more detailed information.")
         }

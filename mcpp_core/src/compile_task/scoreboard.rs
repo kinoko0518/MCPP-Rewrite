@@ -149,7 +149,7 @@ impl Scoreboard {
         format!("scoreboard players reset {} {}", self.mcname(), NAMESPACE)
     }
     
-    fn pure_calc_num(&self, operator:&str, num:i32) -> Result<String, EvaluateError> {
+    pub fn pure_calc_num(&self, operator:&str, num:i32) -> Result<String, EvaluateError> {
         match operator {
             "+" | "-" => Ok(
                 format!(
@@ -172,7 +172,7 @@ impl Scoreboard {
             }
         }
     }
-    fn pure_calc_score(&self, operator:&str, source:&Scoreboard) -> String {
+    pub fn pure_calc_score(&self, operator:&str, source:&Scoreboard) -> String {
         format!(
             "scoreboard players operation {} {} {}= {} {}",
             self.mcname(),
@@ -182,7 +182,7 @@ impl Scoreboard {
             NAMESPACE
         )
     }
-    fn pure_assign_value(&self, value:i32) -> String {
+    pub fn pure_assign_value(&self, value:i32) -> String {
         format!(
             "scoreboard players set {} {} {}",
             self.mcname(),
@@ -190,7 +190,7 @@ impl Scoreboard {
             value
         )
     }
-    fn pure_assign_score(&self, value:&Scoreboard) -> String {
+    pub fn pure_assign_score(&self, value:&Scoreboard) -> String {
         format!(
             "scoreboard players operation {} {} = {} {}",
             self.mcname(),
@@ -199,7 +199,7 @@ impl Scoreboard {
             NAMESPACE
         )
     }
-    fn pure_compare_score(&self, operator:&str, value:&Scoreboard) -> String {
+    pub fn pure_compare_score(&self, operator:&str, value:&Scoreboard) -> String {
         format!(
             "score {} {} {} {} {}",
             self.mcname(),
@@ -209,7 +209,7 @@ impl Scoreboard {
             NAMESPACE
         )
     }
-    fn pure_compare_value(&self, operator:&str, value:i32) -> Result<String, EvaluateError> {
+    pub fn pure_compare_value(&self, operator:&str, value:i32) -> Result<String, EvaluateError> {
         Ok(
             format!(
                 "score {} {} matches {}",
@@ -224,7 +224,7 @@ impl Scoreboard {
             )
         )
     }
-    fn pure_compare_value_not_equal(&self, operator:&str, value:i32) -> (String, String) {
+    pub fn pure_compare_value_not_equal(&self, operator:&str, value:i32) -> (String, String) {
         let constant = Scoreboard::from(value);
         (constant.pure_assign_value(value), constant.pure_compare_score(operator, &constant))
     }

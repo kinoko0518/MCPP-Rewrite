@@ -1,9 +1,9 @@
 extern crate serde;
 extern crate toml;
 
+use crate::input;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use crate::output;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Enviroment {
@@ -37,17 +37,17 @@ pub fn init(path:&str) {
     create_subdir("target");
 
     // Generating gitignore
-    output::make_a_file(path, ".gitignore", "/target").unwrap();
+    input::make_a_file(path, ".gitignore", "/target").unwrap();
     
     // Generating MCPP.toml
     let mut new_env = Enviroment::new();
     new_env.project_name = project_name.to_string();
     let toml_inside = toml::to_string(&new_env).unwrap();
-    output::make_a_file(path, "MCPP.toml", &toml_inside).unwrap();
+    input::make_a_file(path, "MCPP.toml", &toml_inside).unwrap();
 
     // Generating src/main.mcpp
     let main_mcpp_inside = "fn main() {\n   \n}";
-    output::make_a_file(
+    input::make_a_file(
         format!("{}/src", path).as_str(),
         "main.mcpp",
         main_mcpp_inside
